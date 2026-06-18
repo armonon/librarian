@@ -21,6 +21,8 @@ const FEATURES = [
 ];
 
 const SAMPLES = ['octavia butler', 'persian poetry', 'systems thinking', 'james baldwin', 'public domain astronomy', 'isbn:9780140328721'];
+const OPEN_LIBRARY_OFFSETS = [0, 100, 200, 300, 400];
+const GUTENDEX_PAGES = [1, 2, 3, 4];
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const state = { tab: 'search', query: '', loading: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, selected: null, ask: '', reply: '' };
@@ -38,8 +40,8 @@ function category(book) { return book.subjects?.find(Boolean) || book.sources?.[
 async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
 
 async function openLibrary(q) {
-  const data = await json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=18&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average`);
-  return (data.docs || []).map(d => ({
+  const settled = await Promise.allSettled(OPEN_LIBRARY_OFFSETS.map(offset => json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=100&offset=${offset}&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average`)));
+  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.docs || []) : []).map(d => ({
     id: `ol:${d.key}`, title: d.title, authors: uniq(d.author_name).slice(0, 4), year: d.first_publish_year || '', subjects: uniq(d.subject).slice(0, 10), langs: uniq(d.language).slice(0, 4), ids: uniq(d.isbn).slice(0, 8),
     cover: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : '',
     desc: `${d.edition_count || 1} edition${d.edition_count === 1 ? '' : 's'} indexed by Open Library${d.ratings_average ? ` • average rating ${d.ratings_average.toFixed(1)}` : ''}.`,
@@ -50,7 +52,7 @@ async function openLibrary(q) {
 }
 
 async function googleBooks(q) {
-  const data = await json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=18&printType=books&projection=lite`);
+  const data = await json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&printType=books&projection=lite`);
   return (data.items || []).map(item => { const v = item.volumeInfo || {}, a = item.accessInfo || {}, s = item.saleInfo || {}; return {
     id: `gb:${item.id}`, title: v.title, authors: uniq(v.authors).slice(0, 4), year: year(v.publishedDate), subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
     cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: compact(v.description || `${v.publisher || 'Publisher metadata'}${v.pageCount ? ` • ${v.pageCount} pages` : ''}.`, 260),
@@ -60,8 +62,9 @@ async function googleBooks(q) {
 }
 
 async function gutenberg(q) {
-  const data = await json(`https://gutendex.com/books?search=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`);
-  return (data.results || []).slice(0, 18).map(b => ({
+  const term = encodeURIComponent(q.replace(/^isbn:/i, '').trim());
+  const settled = await Promise.allSettled(GUTENDEX_PAGES.map(page => json(`https://gutendex.com/books?search=${term}&page=${page}`)));
+  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.results || []) : []).map(b => ({
     id: `pg:${b.id}`, title: b.title, authors: uniq((b.authors || []).map(a => a.name)).slice(0, 4), year: b.authors?.[0]?.birth_year || '', subjects: uniq([...(b.subjects || []), ...(b.bookshelves || [])]).slice(0, 10), langs: uniq(b.languages), ids: [`Project Gutenberg ${b.id}`],
     cover: b.formats?.['image/jpeg'] || '', desc: `Public-domain ebook from Project Gutenberg • ${(b.download_count || 0).toLocaleString()} downloads.`, availability: 'Free public-domain ebook',
     links: [{ label: 'Project Gutenberg', url: `https://www.gutenberg.org/ebooks/${b.id}` }, ...(b.formats?.['text/html'] ? [{ label: 'Read HTML', url: b.formats['text/html'] }] : []), ...(b.formats?.['application/epub+zip'] ? [{ label: 'Download EPUB', url: b.formats['application/epub+zip'] }] : [])], sources: ['Project Gutenberg']
@@ -108,7 +111,7 @@ function askLibrarian(text) {
 function hero() { return `<section class="hero searchOnly"><div><p class="eyebrow">Librarian v0.1 • open book atlas</p><h1>Search public book catalogs.</h1><p class="lede">Search open catalogs, public-domain libraries, and commercial-scale metadata. Results include source links, availability, authors, years, and full cover previews.</p><form class="search" data-form><input name="q" value="${esc(state.query)}" placeholder="Search title, author, subject, or ISBN…" /><button>${state.loading ? 'Searching…' : 'Search'}</button></form><div class="samples">${SAMPLES.map(q => `<button data-query="${esc(q)}">${esc(q)}</button>`).join('')}</div></div></section>`; }
 function tabs() { return `<nav class="tabs" aria-label="Librarian sections"><button data-tab="search" class="${state.tab === 'search' ? 'active' : ''}">Search</button><button data-tab="ai" class="${state.tab === 'ai' ? 'active' : ''}">AI Librarian</button><button data-tab="profile" class="${state.tab === 'profile' ? 'active' : ''}">Profile</button></nav>`; }
 function features() { return `<section class="section"><div class="heading"><p class="eyebrow">What changed</p><h2>Not just search — an organization layer for books.</h2></div><div class="grid features">${FEATURES.map(([h, p]) => `<article><i></i><h3>${esc(h)}</h3><p>${esc(p)}</p></article>`).join('')}</div></section>`; }
-function results() { if (!state.searched) return ''; const books = filtered(); return `<section class="section" id="results"><div class="heading row"><div><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Asking the libraries…' : `${books.length} organized result${books.length === 1 ? '' : 's'}`}</h2></div><div class="filters"><select data-filter="source"><option value="all">All sources</option>${sources().map(s => `<option ${state.filters.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select data-filter="availability"><option value="all">All availability</option><option value="free" ${state.filters.availability === 'free' ? 'selected' : ''}>Readable/free</option><option value="preview" ${state.filters.availability === 'preview' ? 'selected' : ''}>Preview/catalog</option></select><select data-filter="language"><option value="all">All languages</option>${languages().map(l => `<option ${state.filters.language === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>${state.error ? `<p class="notice">${esc(state.error)}</p>` : ''}${state.loading ? `<div class="grid books">${Array.from({ length: 6 }, () => '<article class="book skeleton"></article>').join('')}</div>` : `<div class="grid books">${books.map(book).join('') || '<p class="notice">No matches after filters. Try widening the lens.</p>'}</div>`}</section>`; }
+function results() { if (!state.searched) return ''; const books = filtered(); return `<section class="section" id="results"><div class="heading row"><div><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching hundreds of books…' : `${books.length} organized result${books.length === 1 ? '' : 's'}`}</h2></div><div class="filters"><select data-filter="source"><option value="all">All sources</option>${sources().map(s => `<option ${state.filters.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select data-filter="availability"><option value="all">All availability</option><option value="free" ${state.filters.availability === 'free' ? 'selected' : ''}>Readable/free</option><option value="preview" ${state.filters.availability === 'preview' ? 'selected' : ''}>Preview/catalog</option></select><select data-filter="language"><option value="all">All languages</option>${languages().map(l => `<option ${state.filters.language === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>${state.error ? `<p class="notice">${esc(state.error)}</p>` : ''}${state.loading ? `<div class="grid books">${Array.from({ length: 12 }, () => '<article class="book skeleton"></article>').join('')}</div>` : `<div class="grid books">${books.map(book).join('') || '<p class="notice">No matches after filters. Try widening the lens.</p>'}</div>`}</section>`; }
 function book(b) { const saved = state.saved.some(x => key(x) === key(b)); return `<article class="book"><button class="cover" data-select="${esc(b.id)}">${b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<em>${esc((b.title || '?')[0])}</em>`}</button><div class="body"><span class="category">${esc(category(b))}</span><h3>${esc(b.title)}</h3><p class="by">${esc(b.authors?.join(', ') || 'Unknown author')}</p><div class="actions"><button data-select="${esc(b.id)}">Select</button><button data-save="${esc(b.id)}" ${saved ? 'disabled' : ''}>${saved ? 'Saved' : 'Save'}</button>${b.links?.[0] ? `<a href="${esc(b.links[0].url)}" target="_blank" rel="noreferrer">Source</a>` : ''}</div></div></article>`; }
 function profile() { return `<section class="section profile"><div class="heading row"><div><p class="eyebrow">Profile</p><h2>Saved books.</h2></div><p>${state.saved.length ? `${state.saved.length} saved locally` : 'Save books from search to build this shelf.'}</p></div><div class="saved">${state.saved.map(savedBook).join('') || '<p class="notice">No saved books yet.</p>'}</div></section>`; }
 function savedBook(b) { return `<article><button class="savedCover" data-select="${esc(b.id)}">${b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<em>${esc((b.title || '?')[0])}</em>`}</button><div><span class="category">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span>${esc(b.authors?.[0] || 'Unknown author')}</span><button data-remove="${esc(b.id)}">Remove</button></div></article>`; }
@@ -118,7 +121,7 @@ function blueprint() { return `<section class="section blueprint"><div><p class=
 function modal() { const b = state.selected; if (!b) return ''; return `<div class="backdrop" data-close><article class="modal compact"><button class="x" data-close>×</button><div class="modalGrid"><div class="cover big">${b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" />` : `<em>${esc((b.title || '?')[0])}</em>`}</div><div><p class="eyebrow">Selected book</p><h2>${esc(b.title)}</h2><dl><dt>Author</dt><dd>${esc(b.authors?.join(', ') || 'Unknown author')}</dd><dt>Category</dt><dd>${esc(category(b))}</dd></dl><div class="actions links">${b.links?.[0] ? `<a href="${esc(b.links[0].url)}" target="_blank" rel="noreferrer">Open source</a>` : ''}<button data-save="${esc(b.id)}">Save</button></div></div></div></article></div>`; }
 
 function activeTab() { if (state.tab === 'ai') return aiLibrarian(); if (state.tab === 'profile') return profile(); return results(); }
-function render() { app.innerHTML = `<main>${hero()}${tabs()}${activeTab()}</main>${modal()}`; bind(); }
+function render() { app.innerHTML = `<main>${tabs()}${hero()}${activeTab()}</main>${modal()}`; bind(); }
 function bind() {
   document.querySelector('[data-form]')?.addEventListener('submit', e => { e.preventDefault(); search(new FormData(e.currentTarget).get('q')); });
   document.querySelector('[data-ask-form]')?.addEventListener('submit', e => { e.preventDefault(); askLibrarian(new FormData(e.currentTarget).get('ask')); });
@@ -127,7 +130,7 @@ function bind() {
   document.querySelectorAll('[data-filter]').forEach(el => el.onchange = () => { state.filters[el.dataset.filter] = el.value; render(); });
   document.querySelectorAll('[data-save]').forEach(el => el.onclick = () => save(el.dataset.save));
   document.querySelectorAll('[data-remove]').forEach(el => el.onclick = () => remove(el.dataset.remove));
-  document.querySelectorAll('[data-select]').forEach(el => el.onclick = () => { state.selected = state.results.find(b => b.id === el.dataset.select); render(); });
+  document.querySelectorAll('[data-select]').forEach(el => el.onclick = () => { state.selected = state.results.find(b => b.id === el.dataset.select) || state.saved.find(b => b.id === el.dataset.select); render(); });
   document.querySelectorAll('[data-close]').forEach(el => el.onclick = e => { if (e.target.closest('.modal') && !e.target.matches('.x')) return; state.selected = null; render(); });
 }
 render();
