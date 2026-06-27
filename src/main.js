@@ -12,20 +12,31 @@ const SOURCES = [
 ];
 
 const FEATURES = [
-  ['Atlas Search', 'One query fans out to Open Library, Google Books, and Gutenberg, then merges duplicate editions by ISBN/title/author.'],
-  ['Metadata Quality Score', 'Every result is scored by completeness so the best catalog record naturally rises.'],
-  ['Availability First', 'Filter toward free ebooks, public-domain downloads, previews, borrowable scans, or catalog-only records.'],
-  ['Personal Stacks', 'Save discoveries locally into a working collection for research, shopping, or syllabus building.'],
-  ['Source Provenance', 'Every card shows exactly which API supplied the record and where to verify it.'],
-  ['Expansion Playbook', 'The site includes a ranked source map and architecture for turning this into a serious book graph.'],
+  ['atlas-search', 'Atlas search', 'One query fans out to Open Library, Google Books, and Gutenberg, then merges duplicate editions by ISBN, title, and author.'],
+  ['quality-score', 'Metadata quality score', 'Every result is scored by completeness so the most complete catalog record naturally rises to the top.'],
+  ['availability', 'Availability first', 'Filter toward free ebooks, public-domain downloads, previews, borrowable scans, or catalog-only records.'],
+  ['stacks', 'Personal stacks', 'Save discoveries into a working shelf for research, shopping, or syllabus building — stored in your browser.'],
+  ['provenance', 'Source provenance', 'Every card shows which APIs supplied the record and links straight back to each source to verify it.'],
+  ['roadmap', 'Expansion playbook', 'A ranked source map and architecture for turning this into a serious, canonical book graph.'],
 ];
+
+const BLUEPRINT = [
+  ['Ingest', 'Monthly Open Library dumps + Gutenberg catalog + Internet Archive metadata + Wikidata IDs + Library of Congress enrichment.'],
+  ['Resolve', 'Cluster works and editions using ISBN-10/13, LCCN, OCLC, OLID, DOI, title-author fingerprints, and Wikidata QIDs.'],
+  ['Enrich', 'Add covers, summaries, subjects, series, awards, related works, availability, formats, and source confidence.'],
+  ['Explore', 'Expose semantic search, collection builders, syllabus mode, public-domain finder, author maps, and API endpoints.'],
+];
+
+const GENRES = ['science fiction', 'fantasy', 'poetry', 'history', 'biography', 'autobiography', 'philosophy', 'mystery', 'romance', 'thriller', 'horror', 'drama', 'essays', 'short stories', 'art', 'science', 'religion', 'psychology', 'economics', 'politics', 'memoir', 'adventure', 'classics', 'children', 'cooking', 'travel', 'nature', 'fiction'];
+const COVER_TINTS = ['#7a3b2e', '#2f4a55', '#4a3a5e', '#6b5326', '#36563f', '#5e3340', '#3a4a3a', '#523a2a'];
 
 const SAMPLES = ['octavia butler', 'persian poetry', 'systems thinking', 'james baldwin', 'public domain astronomy', 'isbn:9780140328721'];
 const OPEN_LIBRARY_OFFSETS = [0, 100, 200, 300, 400];
 const GUTENDEX_PAGES = [1, 2, 3, 4];
+const PAGE_SIZE = 24;
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
-const state = { tab: 'search', query: '', loading: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, selected: null, ask: '', reply: '' };
+const state = { tab: 'search', query: '', loading: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '' };
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
 function persist() { localStorage.setItem(storeKey, JSON.stringify(state.saved)); }
@@ -36,13 +47,37 @@ function isbn(ids = []) { return ids.find(id => /^97[89]/.test(String(id).replac
 function key(book) { const i = isbn(book.ids); return i ? `isbn:${i.replace(/[^0-9X]/gi, '').toUpperCase()}` : `${book.title}|${book.authors?.[0] || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
 function compact(text = '', max = 180) { text = Array.isArray(text) ? text.join(', ') : String(text); return text.length > max ? `${text.slice(0, max).trim()}…` : text; }
 function score(book) { return Math.round(([book.title, book.authors?.length, book.cover, book.year, book.subjects?.length, book.ids?.length, book.desc, book.langs?.length, book.links?.length, !/catalog only/i.test(book.availability || '')].filter(Boolean).length / 10) * 100); }
-function category(book) { return book.subjects?.find(Boolean) || book.sources?.[0] || 'Uncategorized'; }
+function titleCase(s = '') { return String(s).replace(/\w\S*/g, w => w.length > 3 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase()).replace(/^./, c => c.toUpperCase()); }
+
+function category(book) {
+  const subs = uniq(book.subjects).map(s => s.trim()).filter(Boolean);
+  const low = subs.map(s => s.toLowerCase());
+  for (const g of GENRES) { const re = new RegExp(`(^|[^a-z])${g.replace(/ /g, '\\s+')}([^a-z]|$)`); if (low.some(s => re.test(s))) return titleCase(g); }
+  const phrase = subs.find(s => s.split(' ').length <= 3 && s.length <= 24 && !/[,;:()/0-9]/.test(s));
+  return titleCase((phrase || subs[0] || book.sources?.[0] || 'General').slice(0, 30));
+}
+function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return 'free'; if (/preview|sale/i.test(av)) return 'preview'; return 'catalog'; }
+function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
+function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
+function coverInner(b, cls = 'book') { return b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
+const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA' };
+
+const ICON = {
+  search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  bookmark: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  bookmarkFill: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+  ext: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+  x: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+  book: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+};
+
 async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
 
 async function openLibrary(q) {
-  const settled = await Promise.allSettled(OPEN_LIBRARY_OFFSETS.map(offset => json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=100&offset=${offset}&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average`)));
+  const settled = await Promise.allSettled(OPEN_LIBRARY_OFFSETS.map(offset => json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=100&offset=${offset}&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average,number_of_pages_median`)));
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.docs || []) : []).map(d => ({
-    id: `ol:${d.key}`, title: d.title, authors: uniq(d.author_name).slice(0, 4), year: d.first_publish_year || '', subjects: uniq(d.subject).slice(0, 10), langs: uniq(d.language).slice(0, 4), ids: uniq(d.isbn).slice(0, 8),
+    id: `ol:${d.key}`, title: d.title, authors: uniq(d.author_name).slice(0, 4), year: d.first_publish_year || '', pages: d.number_of_pages_median || '', subjects: uniq(d.subject).slice(0, 14), langs: uniq(d.language).slice(0, 4), ids: uniq(d.isbn).slice(0, 8),
     cover: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : '',
     desc: `${d.edition_count || 1} edition${d.edition_count === 1 ? '' : 's'} indexed by Open Library${d.ratings_average ? ` • average rating ${d.ratings_average.toFixed(1)}` : ''}.`,
     availability: d.ebook_access === 'public' || d.ia?.length ? 'Readable / borrowable' : 'Catalog only',
@@ -54,8 +89,8 @@ async function openLibrary(q) {
 async function googleBooks(q) {
   const data = await json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&printType=books&projection=lite`);
   return (data.items || []).map(item => { const v = item.volumeInfo || {}, a = item.accessInfo || {}, s = item.saleInfo || {}; return {
-    id: `gb:${item.id}`, title: v.title, authors: uniq(v.authors).slice(0, 4), year: year(v.publishedDate), subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
-    cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: compact(v.description || `${v.publisher || 'Publisher metadata'}${v.pageCount ? ` • ${v.pageCount} pages` : ''}.`, 260),
+    id: `gb:${item.id}`, title: v.title, authors: uniq(v.authors).slice(0, 4), year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
+    cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: compact(v.description || `${v.publisher || 'Publisher metadata'}${v.pageCount ? ` • ${v.pageCount} pages` : ''}.`, 320),
     availability: a.epub?.isAvailable || a.pdf?.isAvailable ? 'Preview / ebook metadata' : s.saleability === 'FOR_SALE' ? 'For sale' : 'Catalog only',
     links: [...(v.previewLink ? [{ label: 'Google preview', url: v.previewLink }] : []), ...(v.infoLink ? [{ label: 'Google Books', url: v.infoLink }] : [])], sources: ['Google Books']
   }; });
@@ -65,7 +100,7 @@ async function gutenberg(q) {
   const term = encodeURIComponent(q.replace(/^isbn:/i, '').trim());
   const settled = await Promise.allSettled(GUTENDEX_PAGES.map(page => json(`https://gutendex.com/books?search=${term}&page=${page}`)));
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.results || []) : []).map(b => ({
-    id: `pg:${b.id}`, title: b.title, authors: uniq((b.authors || []).map(a => a.name)).slice(0, 4), year: b.authors?.[0]?.birth_year || '', subjects: uniq([...(b.subjects || []), ...(b.bookshelves || [])]).slice(0, 10), langs: uniq(b.languages), ids: [`Project Gutenberg ${b.id}`],
+    id: `pg:${b.id}`, title: b.title, authors: uniq((b.authors || []).map(a => a.name)).slice(0, 4), year: '', pages: '', subjects: uniq([...(b.subjects || []), ...(b.bookshelves || [])]).slice(0, 14), langs: uniq(b.languages), ids: [`Project Gutenberg ${b.id}`],
     cover: b.formats?.['image/jpeg'] || '', desc: `Public-domain ebook from Project Gutenberg • ${(b.download_count || 0).toLocaleString()} downloads.`, availability: 'Free public-domain ebook',
     links: [{ label: 'Project Gutenberg', url: `https://www.gutenberg.org/ebooks/${b.id}` }, ...(b.formats?.['text/html'] ? [{ label: 'Read HTML', url: b.formats['text/html'] }] : []), ...(b.formats?.['application/epub+zip'] ? [{ label: 'Download EPUB', url: b.formats['application/epub+zip'] }] : [])], sources: ['Project Gutenberg']
   }));
@@ -77,7 +112,7 @@ function merge(all) {
     const k = key(b);
     const old = map.get(k);
     if (!old) { b.score = score(b); map.set(k, b); continue; }
-    const next = { ...old, title: old.title || b.title, year: old.year || b.year, cover: old.cover || b.cover, desc: old.desc || b.desc, availability: /free|read|borrow|preview/i.test(old.availability) ? old.availability : b.availability, authors: uniq([old.authors, b.authors]), subjects: uniq([old.subjects, b.subjects]).slice(0, 14), ids: uniq([old.ids, b.ids]), langs: uniq([old.langs, b.langs]), links: uniqLinks([...(old.links || []), ...(b.links || [])]), sources: uniq([old.sources, b.sources]) };
+    const next = { ...old, title: old.title || b.title, year: old.year || b.year, pages: old.pages || b.pages, cover: old.cover || b.cover, desc: (old.desc || '').length >= (b.desc || '').length ? old.desc : b.desc, availability: /free|read|borrow|preview/i.test(old.availability) ? old.availability : b.availability, authors: uniq([old.authors, b.authors]), subjects: uniq([old.subjects, b.subjects]).slice(0, 16), ids: uniq([old.ids, b.ids]), langs: uniq([old.langs, b.langs]), links: uniqLinks([...(old.links || []), ...(b.links || [])]), sources: uniq([old.sources, b.sources]) };
     next.score = score(next); map.set(k, next);
   }
   return [...map.values()].sort((a, b) => b.score - a.score || Number(b.year || 0) - Number(a.year || 0));
@@ -86,51 +121,179 @@ function uniqLinks(links) { return links.filter((l, i, a) => l?.url && a.findInd
 
 async function search(q) {
   q = String(q || '').trim(); if (!q) return;
-  Object.assign(state, { query: q, loading: true, searched: true, error: '' }); render();
+  Object.assign(state, { query: q, loading: true, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
+  if (state.tab !== 'search') state.tab = 'search';
+  render();
   const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q)]);
   state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []));
   state.loading = false;
   state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';
   render();
-  document.querySelector('#results')?.scrollIntoView({ block: 'start' });
+  document.querySelector('#results')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 function filtered() { return state.results.filter(b => (state.filters.source === 'all' || b.sources.includes(state.filters.source)) && (state.filters.language === 'all' || b.langs.includes(state.filters.language)) && (state.filters.availability === 'all' || (state.filters.availability === 'free' ? /free|public|read|borrow/i.test(b.availability) : /preview|sale|catalog/i.test(b.availability)))); }
-function sources() { return uniq(state.results.flatMap(b => b.sources)); }
+function sourceList() { return uniq(state.results.flatMap(b => b.sources)); }
 function languages() { return uniq(state.results.flatMap(b => b.langs)).slice(0, 12); }
-function save(id) { const b = state.results.find(x => x.id === id); if (b && !state.saved.some(x => key(x) === key(b))) { state.saved.unshift(b); state.saved = state.saved.slice(0, 36); persist(); render(); } }
+function save(id) { const b = state.results.find(x => x.id === id) || state.selected; if (b && !state.saved.some(x => key(x) === key(b))) { state.saved.unshift(b); state.saved = state.saved.slice(0, 60); persist(); } }
+function toggleSave(id) { const b = state.results.find(x => x.id === id) || state.selected; if (!b) return; const has = state.saved.some(x => key(x) === key(b)); if (has) state.saved = state.saved.filter(x => key(x) !== key(b)); else save(id); persist(); render(); }
 function remove(id) { state.saved = state.saved.filter(b => b.id !== id); persist(); render(); }
+
 function askLibrarian(text) {
   state.ask = String(text || '').trim();
-  const shelf = state.saved.slice(0, 5);
-  const seed = shelf.length ? shelf.map(b => `${b.title} by ${b.authors?.[0] || 'Unknown'}`).join('; ') : 'Start by saving a few search results, then ask for a path through them.';
-  state.reply = state.ask ? `Use this shelf context: ${seed}\n\nSuggested path: start with the clearest entry, add one adjacent category, then compare authors across time. Search for a title, author, or category from the path to fill gaps.` : '';
+  if (!state.ask) { state.reply = ''; render(); return; }
+  const shelf = state.saved;
+  const cats = uniq(shelf.map(category)).slice(0, 4);
+  const authors = uniq(shelf.flatMap(b => b.authors || [])).slice(0, 4);
+  if (!shelf.length) {
+    state.reply = `You asked: “${state.ask}”\n\nYour shelf is empty, so there's nothing to build a path from yet.\nSearch for a title, author, or subject and save 3–5 results, then ask again — I'll draft a reading order across them.`;
+  } else {
+    state.reply = [
+      `You asked: “${state.ask}”`,
+      ``,
+      `Working from your shelf — ${cats.join(', ') || 'saved books'}${authors.length ? ` (authors: ${authors.join(', ')})` : ''}.`,
+      ``,
+      `Suggested path:`,
+      `1. Start with the most complete record on your shelf as an anchor.`,
+      `2. Read one adjacent category (${cats[1] || cats[0] || 'a related subject'}) to widen context.`,
+      `3. Compare two authors across time to see how the idea evolves.`,
+      ``,
+      `Gaps to fill: search “${cats[0] || state.ask}” and save the highest-scoring results to extend the path.`,
+    ].join('\n');
+  }
   render();
 }
 
-function hero() { return `<section class="hero searchOnly"><div><p class="eyebrow">Librarian v0.1 • open book atlas</p><h1>Search public book catalogs.</h1><p class="lede">Search open catalogs, public-domain libraries, and commercial-scale metadata. Results include source links, availability, authors, years, and full cover previews.</p><form class="search" data-form><input name="q" value="${esc(state.query)}" placeholder="Search title, author, subject, or ISBN…" /><button>${state.loading ? 'Searching…' : 'Search'}</button></form><div class="samples">${SAMPLES.map(q => `<button data-query="${esc(q)}">${esc(q)}</button>`).join('')}</div></div></section>`; }
-function tabs() { return `<nav class="tabs" aria-label="Librarian sections"><button data-tab="search" class="${state.tab === 'search' ? 'active' : ''}">Search</button><button data-tab="ai" class="${state.tab === 'ai' ? 'active' : ''}">AI Librarian</button><button data-tab="profile" class="${state.tab === 'profile' ? 'active' : ''}">Profile</button></nav>`; }
-function features() { return `<section class="section"><div class="heading"><p class="eyebrow">What changed</p><h2>Not just search — an organization layer for books.</h2></div><div class="grid features">${FEATURES.map(([h, p]) => `<article><i></i><h3>${esc(h)}</h3><p>${esc(p)}</p></article>`).join('')}</div></section>`; }
-function results() { if (!state.searched) return ''; const books = filtered(); return `<section class="section" id="results"><div class="heading row"><div><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching hundreds of books…' : `${books.length} organized result${books.length === 1 ? '' : 's'}`}</h2></div><div class="filters"><select data-filter="source"><option value="all">All sources</option>${sources().map(s => `<option ${state.filters.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select data-filter="availability"><option value="all">All availability</option><option value="free" ${state.filters.availability === 'free' ? 'selected' : ''}>Readable/free</option><option value="preview" ${state.filters.availability === 'preview' ? 'selected' : ''}>Preview/catalog</option></select><select data-filter="language"><option value="all">All languages</option>${languages().map(l => `<option ${state.filters.language === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>${state.error ? `<p class="notice">${esc(state.error)}</p>` : ''}${state.loading ? `<div class="grid books">${Array.from({ length: 12 }, () => '<article class="book skeleton"></article>').join('')}</div>` : `<div class="grid books">${books.map(book).join('') || '<p class="notice">No matches after filters. Try widening the lens.</p>'}</div>`}</section>`; }
-function book(b) { const saved = state.saved.some(x => key(x) === key(b)); return `<article class="book"><button class="cover" data-select="${esc(b.id)}">${b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<em>${esc((b.title || '?')[0])}</em>`}</button><div class="body"><span class="category">${esc(category(b))}</span><h3>${esc(b.title)}</h3><p class="by">${esc(b.authors?.join(', ') || 'Unknown author')}</p><div class="actions"><button data-select="${esc(b.id)}">Select</button><button data-save="${esc(b.id)}" ${saved ? 'disabled' : ''}>${saved ? 'Saved' : 'Save'}</button>${b.links?.[0] ? `<a href="${esc(b.links[0].url)}" target="_blank" rel="noreferrer">Source</a>` : ''}</div></div></article>`; }
-function profile() { return `<section class="section profile"><div class="heading row"><div><p class="eyebrow">Profile</p><h2>Saved books.</h2></div><p>${state.saved.length ? `${state.saved.length} saved locally` : 'Save books from search to build this shelf.'}</p></div><div class="saved">${state.saved.map(savedBook).join('') || '<p class="notice">No saved books yet.</p>'}</div></section>`; }
-function savedBook(b) { return `<article><button class="savedCover" data-select="${esc(b.id)}">${b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<em>${esc((b.title || '?')[0])}</em>`}</button><div><span class="category">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span>${esc(b.authors?.[0] || 'Unknown author')}</span><button data-remove="${esc(b.id)}">Remove</button></div></article>`; }
-function aiLibrarian() { return `<section class="section librarian"><div class="heading"><p class="eyebrow">AI Librarian</p><h2>Ask for a reading path.</h2></div><div class="librarianGrid"><form class="ask" data-ask-form><textarea name="ask" placeholder="Ask for similar books, a reading order, or a category map...">${esc(state.ask)}</textarea><button>Ask Librarian</button></form><article class="answer"><p class="eyebrow">Shelf context</p>${state.saved.length ? `<div class="miniShelf">${state.saved.slice(0, 6).map(b => `<button data-query="${esc(category(b))}"><strong>${esc(b.title)}</strong><span>${esc(category(b))}</span></button>`).join('')}</div>` : '<p class="notice">No saved books yet.</p>'}${state.reply ? `<pre>${esc(state.reply)}</pre>` : '<p class="notice">Ask a question to draft a path from your shelf.</p>'}</article></div></section>`; }
-function sourceMap() { return `<section class="section"><div class="heading"><p class="eyebrow">Research map</p><h2>The data sources that can make Librarian unmatched.</h2><p>Production path: cache politely, dedupe by ISBN/OCLC/LCCN/OpenLibrary/Wikidata IDs, then rank records by provenance, completeness, availability, and user usefulness.</p></div><div class="grid sources">${SOURCES.map(s => `<article><div class="top"><span>${esc(s.badge)}</span><b>${esc(s.priority)}</b></div><h3>${esc(s.name)}</h3><p class="muted">${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span>${esc(x)}</span>`).join('')}</div><p>${esc(s.access)}</p><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ↗</a></article>`).join('')}</div></section>`; }
-function blueprint() { return `<section class="section blueprint"><div><p class="eyebrow">Next-level architecture</p><h2>How this becomes the greatest organized index.</h2></div><div class="steps"><article><b>1. Ingest</b><p>Monthly Open Library dumps + Gutenberg catalog + IA metadata + Wikidata IDs + LOC enrichment.</p></article><article><b>2. Resolve</b><p>Cluster works and editions using ISBN-10/13, LCCN, OCLC, OLID, DOI, title-author fingerprints, and Wikidata QIDs.</p></article><article><b>3. Enrich</b><p>Add covers, summaries, subjects, series, awards, related works, availability, formats, and source confidence.</p></article><article><b>4. Explore</b><p>Expose semantic search, collection builders, syllabus mode, public-domain finder, author maps, and API endpoints.</p></article></div></section>`; }
-function modal() { const b = state.selected; if (!b) return ''; return `<div class="backdrop" data-close><article class="modal compact"><button class="x" data-close>×</button><div class="modalGrid"><div class="cover big">${b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" />` : `<em>${esc((b.title || '?')[0])}</em>`}</div><div><p class="eyebrow">Selected book</p><h2>${esc(b.title)}</h2><dl><dt>Author</dt><dd>${esc(b.authors?.join(', ') || 'Unknown author')}</dd><dt>Category</dt><dd>${esc(category(b))}</dd></dl><div class="actions links">${b.links?.[0] ? `<a href="${esc(b.links[0].url)}" target="_blank" rel="noreferrer">Open source</a>` : ''}<button data-save="${esc(b.id)}">Save</button></div></div></div></article></div>`; }
+/* ---------- views ---------- */
+function topbar() {
+  const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('ai', 'AI Librarian')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
+}
 
-function activeTab() { if (state.tab === 'ai') return aiLibrarian(); if (state.tab === 'profile') return profile(); return results(); }
-function render() { app.innerHTML = `<main>${tabs()}${hero()}${activeTab()}</main>${modal()}`; bind(); }
+function hero() {
+  return `<section class="hero"><div class="wrap"><p class="eyebrow">Librarian v0.1 · open book atlas</p><h1>Search every public book catalog at once.</h1><p class="lede">One query fans out across open catalogs, public-domain libraries, and commercial-scale metadata — merged, scored, and traced back to every source.</p>
+    <form class="search" data-form><div class="search-field">${ICON.search}<input name="q" value="${esc(state.query)}" placeholder="Search title, author, subject, or ISBN…" autocomplete="off" /></div><button class="btn-primary" ${state.loading ? 'disabled' : ''}>${state.loading ? 'Searching…' : 'Search'}</button></form>
+    <div class="samples">${SAMPLES.map(q => `<button data-query="${esc(q)}">${esc(q)}</button>`).join('')}</div></div></section>`;
+}
+
+function features() {
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">What it does</p><h2>Not just search — an organization layer for books.</h2></div></div>
+    <div class="features">${FEATURES.map(([, h, p]) => `<article><span class="ico">${ICON.book}</span><h3>${esc(h)}</h3><p>${esc(p)}</p></article>`).join('')}</div></div></section>`;
+}
+
+function bookCard(b) {
+  const saved = state.saved.some(x => key(x) === key(b));
+  const tags = uniq(b.sources).map(s => `<span class="tag">${esc(SRC_TAG[s] || s)}</span>`).join('');
+  const meta = [category(b), b.year, b.pages ? `${b.pages} pp` : ''].filter(Boolean).join(' · ');
+  const dot = b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low';
+  return `<article class="book" data-select="${esc(b.id)}">
+    <div class="book-cover">${coverInner(b)}</div>
+    <div class="book-main">
+      <div class="book-tags">${tags}</div>
+      <h3 class="book-title">${esc(b.title)}</h3>
+      <p class="book-author">${esc(b.authors?.join(', ') || 'Unknown author')}</p>
+      <p class="book-meta">${esc(meta)}</p>
+      <div class="book-foot"><span class="pill ${availClass(b.availability)}">${esc(availLabel(b.availability))}</span><span class="score" title="Metadata completeness"><span class="dot ${dot}"></span>${b.score}%</span></div>
+    </div>
+    <button class="book-save ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}" aria-label="${saved ? 'Remove from shelf' : 'Save to shelf'}">${saved ? ICON.bookmarkFill : ICON.bookmark}</button>
+  </article>`;
+}
+
+function resultsSection() {
+  const books = filtered();
+  const shown = books.slice(0, state.limit);
+  const head = `<div class="section-head"><div class="titles"><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching the catalogs…' : `${books.length} result${books.length === 1 ? '' : 's'}`}</h2>${!state.loading && state.results.length ? `<p>Merged across ${sourceList().length} source${sourceList().length === 1 ? '' : 's'} and ranked by metadata completeness.</p>` : ''}</div>
+    ${state.results.length ? `<div class="filters">
+      <select data-filter="source"><option value="all">All sources</option>${sourceList().map(s => `<option ${state.filters.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
+      <select data-filter="availability"><option value="all">All availability</option><option value="free" ${state.filters.availability === 'free' ? 'selected' : ''}>Readable / free</option><option value="preview" ${state.filters.availability === 'preview' ? 'selected' : ''}>Preview / catalog</option></select>
+      <select data-filter="language"><option value="all">All languages</option>${languages().map(l => `<option ${state.filters.language === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>` : ''}</div>`;
+  let body;
+  if (state.loading) body = `<div class="books">${Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join('')}</div>`;
+  else if (state.error) body = `<p class="notice">${esc(state.error)}</p>`;
+  else if (!books.length) body = '<p class="notice">No matches after filters. Try widening the lens.</p>';
+  else body = `<div class="books">${shown.map(bookCard).join('')}</div>${books.length > state.limit ? `<button class="show-more" data-more>Show more (${books.length - state.limit} more)</button>` : ''}`;
+  return `<section class="section" id="results"><div class="wrap">${head}${body}</div></section>`;
+}
+
+function searchTab() {
+  return hero() + (state.searched ? resultsSection() : features());
+}
+
+function aiTab() {
+  const shelf = state.saved.slice(0, 6);
+  const context = shelf.length
+    ? `<div class="mini-shelf">${shelf.map(b => `<button data-query="${esc(category(b))}"><strong>${esc(b.title)}</strong><span>${esc(category(b))}</span></button>`).join('')}</div>`
+    : '<p class="notice">No saved books yet. Save a few search results to give the librarian context.</p>';
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">AI Librarian</p><h2>Ask for a reading path.</h2><p>Drafts a route through your saved shelf — similar books, a reading order, or a category map.</p></div></div>
+    <div class="ai-grid">
+      <form class="ai-ask" data-ask-form><textarea name="ask" placeholder="Ask for similar books, a reading order, or a category map…">${esc(state.ask)}</textarea><button class="btn-primary">Ask Librarian</button></form>
+      <div class="ai-answer"><p class="label">Shelf context</p>${context}${state.reply ? `<div class="ai-reply">${esc(state.reply)}</div>` : '<p class="notice">Ask a question to draft a path from your shelf.</p>'}<p class="ai-note">Offline draft generated from your shelf. Wire this panel to a model for richer, generative answers.</p></div>
+    </div></div></section>`;
+}
+
+function sourcesTab() {
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Research map</p><h2>The sources that can make Librarian unmatched.</h2><p>Production path: cache politely, dedupe by ISBN / OCLC / LCCN / Open Library / Wikidata IDs, then rank records by provenance, completeness, availability, and usefulness.</p></div></div>
+    <div class="sources">${SOURCES.map(s => `<article><div class="top"><span class="badge">${esc(s.badge)}</span><span class="priority">${esc(s.priority)}</span></div><h3>${esc(s.name)}</h3><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
+    <div class="section-head blueprint" style="margin-top:48px"><div class="titles"><p class="eyebrow">Next-level architecture</p><h2>How this becomes the greatest organized index.</h2></div></div>
+    <div class="steps">${BLUEPRINT.map(([h, p], i) => `<article><span class="n">${i + 1}</span><b>${esc(h)}</b><p>${esc(p)}</p></article>`).join('')}</div></div></section>`;
+}
+
+function profileTab() {
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Your shelf</p><h2>Saved books.</h2><p>${state.saved.length ? `${state.saved.length} book${state.saved.length === 1 ? '' : 's'} saved locally in this browser.` : 'Save books from search to build your shelf.'}</p></div></div>
+    ${state.saved.length ? `<div class="shelf">${state.saved.map(savedCard).join('')}</div>` : '<p class="notice">No saved books yet. Head to Search and tap the bookmark on any result.</p>'}</div></section>`;
+}
+function savedCard(b) {
+  return `<article class="saved" data-select="${esc(b.id)}"><div class="book-cover">${coverInner(b)}</div><div class="saved-body"><span class="cat">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span class="author">${esc(b.authors?.[0] || 'Unknown author')}</span></div><button class="saved-remove" data-remove="${esc(b.id)}" aria-label="Remove from shelf">${ICON.trash}</button></article>`;
+}
+
+function modal() {
+  const b = state.selected; if (!b) return '';
+  const saved = state.saved.some(x => key(x) === key(b));
+  const meta = [b.year, b.pages ? `${b.pages} pages` : '', (b.langs || []).slice(0, 3).join(', ')].filter(Boolean).join(' · ');
+  const ids = uniq(b.ids).slice(0, 8);
+  const links = uniqLinks(b.links || []);
+  return `<div class="backdrop" data-close><article class="modal" role="dialog" aria-modal="true" aria-label="${esc(b.title)}">
+    <button class="modal-close" data-close aria-label="Close">${ICON.x}</button>
+    <div class="modal-grid">
+      <div class="modal-cover">${coverInner(b, 'modal')}</div>
+      <div class="modal-body">
+        <p class="eyebrow">${esc(category(b))}</p>
+        <h2>${esc(b.title)}</h2>
+        <p class="modal-author">${esc(b.authors?.join(', ') || 'Unknown author')}</p>
+        <div class="modal-row"><span class="pill ${availClass(b.availability)}">${esc(b.availability || 'Catalog only')}</span>${meta ? `<span class="score"><span class="dot ${b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low'}"></span>${b.score}% complete</span>` : ''}</div>
+        ${meta ? `<p class="book-meta" style="margin-bottom:18px">${esc(meta)}</p>` : ''}
+        ${b.desc ? `<p class="modal-desc">${esc(b.desc)}</p>` : ''}
+        ${b.subjects?.length ? `<div class="modal-section"><h4>Subjects</h4><div class="chips" style="display:flex;flex-wrap:wrap;gap:6px">${uniq(b.subjects).slice(0, 10).map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div></div>` : ''}
+        ${ids.length ? `<div class="modal-section"><h4>Identifiers</h4><div class="id-list">${ids.map(i => `<code>${esc(i)}</code>`).join('')}</div></div>` : ''}
+        ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
+        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button></div>
+      </div>
+    </div>
+  </article></div>`;
+}
+
+function activeTab() {
+  if (state.tab === 'ai') return aiTab();
+  if (state.tab === 'sources') return sourcesTab();
+  if (state.tab === 'profile') return profileTab();
+  return searchTab();
+}
+
+function render() { app.innerHTML = `${topbar()}<main>${activeTab()}</main>${modal()}`; bind(); }
+function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
+
 function bind() {
   document.querySelector('[data-form]')?.addEventListener('submit', e => { e.preventDefault(); search(new FormData(e.currentTarget).get('q')); });
   document.querySelector('[data-ask-form]')?.addEventListener('submit', e => { e.preventDefault(); askLibrarian(new FormData(e.currentTarget).get('ask')); });
-  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; render(); });
+  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; window.scrollTo({ top: 0 }); render(); });
   document.querySelectorAll('[data-query]').forEach(el => el.onclick = () => { state.tab = 'search'; search(el.dataset.query); });
-  document.querySelectorAll('[data-filter]').forEach(el => el.onchange = () => { state.filters[el.dataset.filter] = el.value; render(); });
-  document.querySelectorAll('[data-save]').forEach(el => el.onclick = () => save(el.dataset.save));
-  document.querySelectorAll('[data-remove]').forEach(el => el.onclick = () => remove(el.dataset.remove));
+  document.querySelectorAll('[data-filter]').forEach(el => el.onchange = () => { state.filters[el.dataset.filter] = el.value; state.limit = PAGE_SIZE; repaintResults(); });
+  document.querySelector('[data-more]')?.addEventListener('click', () => { state.limit += PAGE_SIZE; repaintResults(); });
+  document.querySelectorAll('[data-save]').forEach(el => el.onclick = e => { e.stopPropagation(); toggleSave(el.dataset.save); });
+  document.querySelectorAll('[data-remove]').forEach(el => el.onclick = e => { e.stopPropagation(); remove(el.dataset.remove); });
   document.querySelectorAll('[data-select]').forEach(el => el.onclick = () => { state.selected = state.results.find(b => b.id === el.dataset.select) || state.saved.find(b => b.id === el.dataset.select); render(); });
-  document.querySelectorAll('[data-close]').forEach(el => el.onclick = e => { if (e.target.closest('.modal') && !e.target.matches('.x')) return; state.selected = null; render(); });
+  document.querySelectorAll('[data-close]').forEach(el => el.onclick = e => { if (e.target.closest('.modal') && !e.target.closest('[data-close]')) return; state.selected = null; render(); });
 }
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.selected) { state.selected = null; render(); } });
 render();

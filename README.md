@@ -1,6 +1,6 @@
 # Librarian
 
-A beautiful, multi-source open book atlas for discovering, organizing, and verifying books across the web.
+A multi-source open book atlas for discovering, organizing, and verifying books across the web. Dark "reading room" UI — warm canvas, editorial serif, single clay accent.
 
 ## What it does now
 
@@ -9,11 +9,18 @@ A beautiful, multi-source open book atlas for discovering, organizing, and verif
   - Google Books
   - Gutendex / Project Gutenberg
 - Merges duplicate-looking records by ISBN or title/author fingerprint.
-- Shows metadata completeness scores.
-- Filters by source, language, and availability.
-- Saves books into a local browser stack.
-- Shows source provenance and direct source links.
-- Includes a built-in roadmap for turning this into a canonical book graph.
+- Ranks results by a metadata completeness score (shown on every card and in the detail view).
+- Data-rich result cards: cover, source tags, normalized category, year, page count, availability, and score.
+- Detail modal surfacing description, all identifiers, subjects, every source link, and provenance.
+- Filters by source, language, and availability; paginated with "show more".
+- Saves books into a local browser shelf, with a live shelf count in the nav.
+
+### Tabs
+
+- **Search** — the federated search and results.
+- **AI Librarian** — drafts a reading path from your saved shelf. This is an *offline heuristic template*, not a live model; it reflects your question and shelf categories. Wire it to an API for generative answers.
+- **Sources** — the ranked source map and the ingest → resolve → enrich → explore architecture.
+- **Shelf** — your locally saved books.
 
 ## Run locally
 
