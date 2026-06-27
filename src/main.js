@@ -135,9 +135,37 @@ async function search(q) {
 function filtered() { return state.results.filter(b => (state.filters.source === 'all' || b.sources.includes(state.filters.source)) && (state.filters.language === 'all' || b.langs.includes(state.filters.language)) && (state.filters.availability === 'all' || (state.filters.availability === 'free' ? /free|public|read|borrow/i.test(b.availability) : /preview|sale|catalog/i.test(b.availability)))); }
 function sourceList() { return uniq(state.results.flatMap(b => b.sources)); }
 function languages() { return uniq(state.results.flatMap(b => b.langs)).slice(0, 12); }
-function save(id) { const b = state.results.find(x => x.id === id) || state.selected; if (b && !state.saved.some(x => key(x) === key(b))) { state.saved.unshift(b); state.saved = state.saved.slice(0, 60); persist(); } }
-function toggleSave(id) { const b = state.results.find(x => x.id === id) || state.selected; if (!b) return; const has = state.saved.some(x => key(x) === key(b)); if (has) state.saved = state.saved.filter(x => key(x) !== key(b)); else save(id); persist(); render(); }
-function remove(id) { state.saved = state.saved.filter(b => b.id !== id); persist(); render(); }
+function findBook(id) { return state.results.find(x => x.id === id) || (state.selected && state.selected.id === id ? state.selected : null) || state.saved.find(x => x.id === id); }
+function toggleSave(id) {
+  const b = findBook(id); if (!b) return;
+  const has = state.saved.some(x => key(x) === key(b));
+  if (has) state.saved = state.saved.filter(x => key(x) !== key(b));
+  else { state.saved.unshift(b); state.saved = state.saved.slice(0, 60); }
+  persist();
+  if (state.tab === 'profile') { render(); return; } // shelf list changes; rebuild it
+  syncSaveButtons(); syncShelfCount(); // surgical update — never touch the result images
+}
+function remove(id) {
+  state.saved = state.saved.filter(b => b.id !== id);
+  persist();
+  const card = [...document.querySelectorAll('[data-remove]')].find(el => el.dataset.remove === id)?.closest('.saved');
+  if (card && state.saved.length) { card.remove(); syncShelfCount(); } else render();
+}
+function syncSaveButtons() {
+  document.querySelectorAll('[data-save]').forEach(btn => {
+    const b = findBook(btn.dataset.save); if (!b) return;
+    const saved = state.saved.some(x => key(x) === key(b));
+    btn.classList.toggle('is-saved', saved);
+    if (btn.classList.contains('btn-ghost')) btn.innerHTML = `${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}`;
+    else { btn.innerHTML = saved ? ICON.bookmarkFill : ICON.bookmark; btn.setAttribute('aria-label', saved ? 'Remove from shelf' : 'Save to shelf'); }
+  });
+}
+function syncShelfCount() {
+  const tab = document.querySelector('.nav [data-tab="profile"]'); if (!tab) return;
+  let badge = tab.querySelector('.count'); const n = state.saved.length;
+  if (n) { if (!badge) { badge = document.createElement('span'); badge.className = 'count'; tab.appendChild(badge); } badge.textContent = n; }
+  else if (badge) badge.remove();
+}
 
 function askLibrarian(text) {
   state.ask = String(text || '').trim();
