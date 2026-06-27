@@ -34,6 +34,8 @@ const SAMPLES = ['octavia butler', 'persian poetry', 'systems thinking', 'james 
 const OPEN_LIBRARY_OFFSETS = [0, 100, 200, 300, 400];
 const GUTENDEX_PAGES = [1, 2, 3, 4];
 const PAGE_SIZE = 24;
+// Polite-pool contact sent to OpenAlex/Crossref for higher, friendlier rate limits. Change to your email.
+const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const state = { tab: 'search', query: '', loading: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '' };
@@ -60,7 +62,9 @@ function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return '
 function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
 function coverInner(b, cls = 'book') { return b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
-const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA' };
+const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR' };
+function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
+function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
 
 const ICON = {
   search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
@@ -106,6 +110,51 @@ async function gutenberg(q) {
   }));
 }
 
+async function openAlex(q) {
+  const term = q.replace(/^isbn:/i, '').trim();
+  const data = await json(`https://api.openalex.org/works?search=${encodeURIComponent(term)}&filter=type:book|monograph|dissertation&per-page=50&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
+  return (data.results || []).map(w => {
+    const oa = w.open_access || {}, loc = w.best_oa_location || w.primary_location || {}, doi = (w.doi || '').replace(/^https?:\/\/doi\.org\//, '');
+    const abstract = reconstructAbstract(w.abstract_inverted_index);
+    return {
+      id: `oa:${w.id}`, title: w.display_name, authors: uniq((w.authorships || []).map(a => a.author?.display_name)).slice(0, 4), year: w.publication_year || '', pages: '',
+      subjects: uniq((w.topics || []).map(t => t.display_name)).slice(0, 10), langs: w.language ? [w.language] : [], ids: uniq([doi]).slice(0, 8), cover: '',
+      desc: abstract ? compact(abstract, 320) : `${titleCase(w.type || 'work')}${loc.source?.display_name ? ` • ${loc.source.display_name}` : ''}${w.cited_by_count ? ` • cited ${w.cited_by_count.toLocaleString()} times` : ''}.`,
+      availability: oa.is_oa ? 'Free / open access' : 'Catalog only',
+      links: uniqLinks([...(oa.oa_url ? [{ label: 'Open-access full text', url: oa.oa_url }] : []), ...(loc.landing_page_url ? [{ label: 'Publisher page', url: loc.landing_page_url }] : []), ...(doi ? [{ label: 'DOI', url: `https://doi.org/${doi}` }] : []), { label: 'OpenAlex', url: w.id }]),
+      sources: ['OpenAlex']
+    };
+  });
+}
+
+async function crossref(q) {
+  const term = q.replace(/^isbn:/i, '').trim();
+  const data = await json(`https://api.crossref.org/works?query=${encodeURIComponent(term)}&filter=type:monograph,type:book,type:reference-book&rows=40&select=title,author,published,ISBN,publisher,type,abstract,subject,language,DOI&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
+  return (data.message?.items || []).map(it => {
+    const doi = it.DOI || '', yr = (it.published?.['date-parts']?.[0] || [])[0] || '';
+    return {
+      id: `cr:${doi || (it.title || [])[0] || Math.random()}`, title: (it.title || [])[0], authors: uniq((it.author || []).map(a => [a.given, a.family].filter(Boolean).join(' '))).slice(0, 4), year: yr, pages: '',
+      subjects: uniq(it.subject).slice(0, 10), langs: it.language ? [it.language] : [], ids: uniq(it.ISBN).slice(0, 8), cover: '',
+      desc: it.abstract ? compact(String(it.abstract).replace(/<[^>]+>/g, ''), 320) : `${it.publisher || 'Publisher'}${it.type ? ` • ${titleCase(it.type.replace(/-/g, ' '))}` : ''}.`,
+      availability: 'Catalog only', links: uniqLinks(doi ? [{ label: 'DOI', url: `https://doi.org/${doi}` }] : []), sources: ['Crossref']
+    };
+  });
+}
+
+async function internetArchive(q) {
+  const term = q.replace(/^isbn:/i, '').trim();
+  const data = await json(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(term)}+AND+mediatype%3Atexts&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&fl[]=language&fl[]=subject&fl[]=isbn&rows=40&page=1&output=json`);
+  return (data.response?.docs || []).map(d => {
+    const arr = v => [].concat(v || []).filter(Boolean);
+    return {
+      id: `ia:${d.identifier}`, title: arr(d.title)[0], authors: arr(d.creator).slice(0, 4), year: year(d.year), pages: '',
+      subjects: uniq(arr(d.subject)).slice(0, 10), langs: uniq(arr(d.language)).slice(0, 3), ids: uniq(arr(d.isbn)).slice(0, 8),
+      cover: `https://archive.org/services/img/${d.identifier}`, desc: 'Digitized full text on the Internet Archive.', availability: 'Readable / borrowable',
+      links: [{ label: 'Internet Archive', url: `https://archive.org/details/${d.identifier}` }], sources: ['Internet Archive']
+    };
+  });
+}
+
 function merge(all) {
   const map = new Map();
   for (const b of all.filter(x => x?.title)) {
@@ -124,7 +173,7 @@ async function search(q) {
   Object.assign(state, { query: q, loading: true, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
   if (state.tab !== 'search') state.tab = 'search';
   render();
-  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q)]);
+  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q)]);
   state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []));
   state.loading = false;
   state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';
@@ -279,7 +328,8 @@ function modal() {
   const saved = state.saved.some(x => key(x) === key(b));
   const meta = [b.year, b.pages ? `${b.pages} pages` : '', (b.langs || []).slice(0, 3).join(', ')].filter(Boolean).join(' · ');
   const ids = uniq(b.ids).slice(0, 8);
-  const links = uniqLinks(b.links || []);
+  const wc = isbnOf(b.ids);
+  const links = uniqLinks([...(b.links || []), ...(wc ? [{ label: 'Find in a library (WorldCat)', url: `https://search.worldcat.org/isbn/${wc}` }] : [])]);
   return `<div class="backdrop" data-close><article class="modal" role="dialog" aria-modal="true" aria-label="${esc(b.title)}">
     <button class="modal-close" data-close aria-label="Close">${ICON.x}</button>
     <div class="modal-grid">
