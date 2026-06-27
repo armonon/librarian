@@ -11,6 +11,8 @@ const TARGETS = {
   k10plus: q => ({ url: `https://sru.k10plus.de/opac-de-627?version=1.1&operation=searchRetrieve&query=pica.all%3D${q}&maximumRecords=100&recordSchema=dc` }),
   loc: q => ({ url: `http://lx2.loc.gov:210/lcdb?version=1.1&operation=searchRetrieve&query=${q}&maximumRecords=100&recordSchema=dc` }),
   bnf: q => ({ url: `http://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve&query=bib.anywhere%20all%20%22${q}%22&recordSchema=dublincore&maximumRecords=100` }),
+  dnb: q => ({ url: `https://services.dnb.de/sru/dnb?version=1.1&operation=searchRetrieve&query=${q}&recordSchema=oai_dc&maximumRecords=100` }),
+  finna: q => ({ url: `https://api.finna.fi/api/v1/search?lookfor=${q}&type=AllFields&limit=80&field[]=id&field[]=title&field[]=year&field[]=nonPresenterAuthors&field[]=languages&field[]=subjects&field[]=formats&field[]=cleanIsbn&field[]=images` }),
 };
 
 export default async (req) => {
