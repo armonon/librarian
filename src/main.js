@@ -32,6 +32,7 @@ const COVER_TINTS = ['#7a3b2e', '#2f4a55', '#4a3a5e', '#6b5326', '#36563f', '#5e
 
 const SAMPLES = ['octavia butler', 'persian poetry', 'systems thinking', 'james baldwin', 'public domain astronomy', 'isbn:9780140328721'];
 const OPEN_LIBRARY_OFFSETS = [0, 100, 200, 300, 400];
+const GOOGLE_OFFSETS = [0, 40, 80, 120];
 const GUTENDEX_PAGES = [1, 2, 3, 4];
 const PAGE_SIZE = 24;
 // Polite-pool contact sent to OpenAlex/Crossref for higher, friendlier rate limits. Change to your email.
@@ -91,8 +92,8 @@ async function openLibrary(q) {
 }
 
 async function googleBooks(q) {
-  const data = await json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&printType=books&projection=lite`);
-  return (data.items || []).map(item => { const v = item.volumeInfo || {}, a = item.accessInfo || {}, s = item.saleInfo || {}; return {
+  const settled = await Promise.allSettled(GOOGLE_OFFSETS.map(start => json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&startIndex=${start}&printType=books&projection=lite`)));
+  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.items || []) : []).map(item => { const v = item.volumeInfo || {}, a = item.accessInfo || {}, s = item.saleInfo || {}; return {
     id: `gb:${item.id}`, title: v.title, authors: uniq(v.authors).slice(0, 4), year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
     cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: compact(v.description || `${v.publisher || 'Publisher metadata'}${v.pageCount ? ` • ${v.pageCount} pages` : ''}.`, 320),
     availability: a.epub?.isAvailable || a.pdf?.isAvailable ? 'Preview / ebook metadata' : s.saleability === 'FOR_SALE' ? 'For sale' : 'Catalog only',
@@ -112,7 +113,7 @@ async function gutenberg(q) {
 
 async function openAlex(q) {
   const term = q.replace(/^isbn:/i, '').trim();
-  const data = await json(`https://api.openalex.org/works?search=${encodeURIComponent(term)}&filter=type:book|monograph|dissertation&per-page=50&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
+  const data = await json(`https://api.openalex.org/works?search=${encodeURIComponent(term)}&filter=type:book|monograph|dissertation&per-page=200&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
   return (data.results || []).map(w => {
     const oa = w.open_access || {}, loc = w.best_oa_location || w.primary_location || {}, doi = (w.doi || '').replace(/^https?:\/\/doi\.org\//, '');
     const abstract = reconstructAbstract(w.abstract_inverted_index);
@@ -129,7 +130,7 @@ async function openAlex(q) {
 
 async function crossref(q) {
   const term = q.replace(/^isbn:/i, '').trim();
-  const data = await json(`https://api.crossref.org/works?query=${encodeURIComponent(term)}&filter=type:monograph,type:book,type:reference-book&rows=40&select=title,author,published,ISBN,publisher,type,abstract,subject,language,DOI&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
+  const data = await json(`https://api.crossref.org/works?query=${encodeURIComponent(term)}&filter=type:monograph,type:book,type:reference-book&rows=100&select=title,author,published,ISBN,publisher,type,abstract,subject,language,DOI&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
   return (data.message?.items || []).map(it => {
     const doi = it.DOI || '', yr = (it.published?.['date-parts']?.[0] || [])[0] || '';
     return {
@@ -143,7 +144,7 @@ async function crossref(q) {
 
 async function internetArchive(q) {
   const term = q.replace(/^isbn:/i, '').trim();
-  const data = await json(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(term)}+AND+mediatype%3Atexts&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&fl[]=language&fl[]=subject&fl[]=isbn&rows=40&page=1&output=json`);
+  const data = await json(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(term)}+AND+mediatype%3Atexts&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&fl[]=language&fl[]=subject&fl[]=isbn&rows=100&page=1&output=json`);
   return (data.response?.docs || []).map(d => {
     const arr = v => [].concat(v || []).filter(Boolean);
     return {
