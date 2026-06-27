@@ -37,6 +37,8 @@ const GUTENDEX_PAGES = [1, 2, 3, 4];
 const PAGE_SIZE = 24;
 // Polite-pool contact sent to OpenAlex/Crossref for higher, friendlier rate limits. Change to your email.
 const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
+// Server-side proxy for keyed / no-CORS sources (DPLA, Europeana, CORE). Keys live in Netlify env vars.
+const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const state = { tab: 'search', query: '', loading: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '' };
@@ -63,7 +65,7 @@ function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return '
 function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
 function coverInner(b, cls = 'book') { return b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
-const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR' };
+const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE' };
 function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
 function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
 
@@ -156,6 +158,48 @@ async function internetArchive(q) {
   });
 }
 
+async function dpla(q) {
+  const data = await json(`${PROXY}?api=dpla&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`);
+  return (data.docs || []).map(d => {
+    const sr = d.sourceResource || {}, arr = v => [].concat(v || []).filter(Boolean);
+    return {
+      id: `dpla:${d.id}`, title: arr(sr.title)[0], authors: uniq(arr(sr.creator)).slice(0, 4), year: year(sr.date?.displayDate || sr.date), pages: '',
+      subjects: uniq(arr(sr.subject).map(s => s?.name || s)).slice(0, 10), langs: uniq(arr(sr.language).map(l => l?.name || l)).slice(0, 3), ids: [],
+      cover: typeof d.object === 'string' ? d.object : '',
+      desc: compact(arr(sr.description)[0] || `Held by ${d.provider?.name || d.dataProvider || 'a DPLA partner'}.`, 320),
+      availability: 'Catalog only',
+      links: uniqLinks([...(d.isShownAt ? [{ label: d.provider?.name || 'View item', url: d.isShownAt }] : []), { label: 'DPLA', url: `https://dp.la/item/${d.id}` }]),
+      sources: ['DPLA']
+    };
+  });
+}
+
+async function europeana(q) {
+  const data = await json(`${PROXY}?api=europeana&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`);
+  const arr = v => [].concat(v || []).filter(Boolean), notUri = a => !/^https?:\/\//.test(a);
+  return (data.items || []).map(it => ({
+    id: `eu:${it.id}`, title: arr(it.title)[0], authors: uniq(arr(it.dcCreator).filter(notUri)).slice(0, 4), year: year(arr(it.year)[0]), pages: '',
+    subjects: uniq(arr(it.dcSubject).filter(notUri)).slice(0, 10), langs: uniq(arr(it.language)).slice(0, 3), ids: [],
+    cover: arr(it.edmPreview)[0] || '',
+    desc: compact(arr(it.dcDescription)[0] || `From ${arr(it.dataProvider)[0] || 'a Europeana partner'}.`, 320),
+    availability: 'Catalog only',
+    links: uniqLinks([...(arr(it.edmIsShownAt)[0] ? [{ label: 'View item', url: arr(it.edmIsShownAt)[0] }] : []), ...(it.guid ? [{ label: 'Europeana', url: it.guid }] : [])]),
+    sources: ['Europeana']
+  }));
+}
+
+async function core(q) {
+  const data = await json(`${PROXY}?api=core&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`);
+  return (data.results || []).map(w => ({
+    id: `core:${w.id}`, title: w.title, authors: uniq((w.authors || []).map(a => a.name)).slice(0, 4), year: w.yearPublished || '', pages: '',
+    subjects: uniq([].concat(w.fieldOfStudy || []).filter(Boolean)).slice(0, 10), langs: w.language ? [w.language.name || w.language.code] : [], ids: uniq([w.doi]).slice(0, 8), cover: '',
+    desc: w.abstract ? compact(w.abstract, 320) : `${w.publisher || 'Open-access work'}${w.documentType ? ` • ${w.documentType}` : ''}.`,
+    availability: w.downloadUrl ? 'Free / open access' : 'Catalog only',
+    links: uniqLinks([...(w.downloadUrl ? [{ label: 'Open-access PDF', url: w.downloadUrl }] : []), ...(w.doi ? [{ label: 'DOI', url: `https://doi.org/${w.doi}` }] : []), { label: 'CORE', url: `https://core.ac.uk/works/${w.id}` }]),
+    sources: ['CORE']
+  }));
+}
+
 function merge(all) {
   const map = new Map();
   for (const b of all.filter(x => x?.title)) {
@@ -174,7 +218,7 @@ async function search(q) {
   Object.assign(state, { query: q, loading: true, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
   if (state.tab !== 'search') state.tab = 'search';
   render();
-  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q)]);
+  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q), dpla(q), europeana(q), core(q)]);
   state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []));
   state.loading = false;
   state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';

@@ -4,3 +4,6 @@ dist
 .env
 .env.*
 .netlify
+
+# Local server-side API keys bundled into Netlify functions (never commit)
+netlify/functions/_keys.mjs
