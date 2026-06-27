@@ -65,7 +65,7 @@ function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return '
 function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
 function coverInner(b, cls = 'book') { return b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
-const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE' };
+const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF' };
 function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
 function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
 
@@ -80,6 +80,7 @@ const ICON = {
 };
 
 async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
+async function text(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 11000); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.text(); } finally { clearTimeout(t); } }
 
 async function openLibrary(q) {
   const settled = await Promise.allSettled(OPEN_LIBRARY_OFFSETS.map(offset => json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=100&offset=${offset}&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average,number_of_pages_median`)));
@@ -200,6 +201,33 @@ async function core(q) {
   }));
 }
 
+// Generic SRU / Dublin Core parser — handles K10plus, Library of Congress, BnF (namespaces vary).
+const RELATORS = /[.,]\s*(auteur du texte|éditeur scientifique|verfasser(in)?|mitwirkende[r]?|herausgeber(in)?|übersetzer(in)?|author|editor|translator|illustrator|compiler|writer of [a-z ]+|foreword|introduction|contributor)\b.*$/i;
+const cleanName = s => s.replace(/\s*\([^)]*\)/g, '').replace(RELATORS, '').replace(/[\s,.;:/]+$/, '').trim();
+const cleanTitle = s => s.replace(/\s*[/:;]\s*$/, '').replace(/\s+/g, ' ').trim();
+function parseSRU(xml, source, prefix) {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) return [];
+  return [...doc.getElementsByTagNameNS('*', 'recordData')].map((rd, i) => {
+    const get = name => [...rd.getElementsByTagNameNS('*', name)].map(e => e.textContent.trim()).filter(Boolean);
+    const title = cleanTitle(get('title')[0] || ''); if (!title) return null;
+    const rawIds = get('identifier');
+    const ids = uniq(rawIds.map(x => { const m = x.replace(/[^0-9Xx]/g, ''); return /^(97[89]\d{10}|\d{9}[\dXx])$/.test(m) ? m : (/^(https?:|urn:|ark:)/i.test(x) ? '' : (x.length <= 20 ? x : '')); }).filter(Boolean));
+    const wc = isbnOf(ids), catUrl = rawIds.find(x => /^https?:\/\//i.test(x));
+    return {
+      id: `${prefix}:${i}:${(wc || title).slice(0, 50)}`, title,
+      authors: uniq([...get('creator'), ...get('contributor')].map(cleanName)).filter(Boolean).slice(0, 4),
+      year: year(get('date')[0]), pages: '', subjects: uniq(get('subject')).slice(0, 10), langs: uniq(get('language')).slice(0, 3), ids: ids.slice(0, 8), cover: '',
+      desc: compact(get('description')[0] || `Catalog record from ${source}.`, 320), availability: 'Catalog only',
+      links: uniqLinks([...(catUrl ? [{ label: `${source} record`, url: catUrl }] : []), ...(wc ? [{ label: 'Find in a library (WorldCat)', url: `https://search.worldcat.org/isbn/${wc}` }] : [])]),
+      sources: [source]
+    };
+  }).filter(Boolean);
+}
+async function k10plus(q) { return parseSRU(await text(`${PROXY}?api=k10plus&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`), 'K10plus', 'k10'); }
+async function loc(q) { return parseSRU(await text(`${PROXY}?api=loc&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`), 'Library of Congress', 'loc'); }
+async function bnf(q) { return parseSRU(await text(`${PROXY}?api=bnf&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`), 'BnF', 'bnf'); }
+
 function merge(all) {
   const map = new Map();
   for (const b of all.filter(x => x?.title)) {
@@ -218,7 +246,7 @@ async function search(q) {
   Object.assign(state, { query: q, loading: true, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
   if (state.tab !== 'search') state.tab = 'search';
   render();
-  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q), dpla(q), europeana(q), core(q)]);
+  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q), dpla(q), europeana(q), core(q), k10plus(q), loc(q), bnf(q)]);
   state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []));
   state.loading = false;
   state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';

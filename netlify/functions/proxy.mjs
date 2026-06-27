@@ -7,6 +7,10 @@ const TARGETS = {
   dpla: q => ({ url: `https://api.dp.la/v2/items?q=${q}&sourceResource.type=text&page_size=100&api_key=${k('DPLA_KEY')}` }),
   europeana: q => ({ url: `https://api.europeana.eu/record/v2/search.json?query=${q}&rows=100&profile=rich&qf=TYPE%3ATEXT&wskey=${k('EUROPEANA_KEY')}` }),
   core: q => ({ url: `https://api.core.ac.uk/v3/search/works/?q=${q}&limit=60`, headers: { Authorization: `Bearer ${k('CORE_KEY')}` } }),
+  // Keyless union-catalog / national-library SRU endpoints (Dublin Core, XML).
+  k10plus: q => ({ url: `https://sru.k10plus.de/opac-de-627?version=1.1&operation=searchRetrieve&query=pica.all%3D${q}&maximumRecords=100&recordSchema=dc` }),
+  loc: q => ({ url: `http://lx2.loc.gov:210/lcdb?version=1.1&operation=searchRetrieve&query=${q}&maximumRecords=100&recordSchema=dc` }),
+  bnf: q => ({ url: `http://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve&query=bib.anywhere%20all%20%22${q}%22&recordSchema=dublincore&maximumRecords=100` }),
 };
 
 export default async (req) => {
