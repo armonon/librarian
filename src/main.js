@@ -51,7 +51,8 @@ const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
 const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
-const state = { tab: 'search', query: '', loading: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '' };
+let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
 function persist() { localStorage.setItem(storeKey, JSON.stringify(state.saved)); }
@@ -332,15 +333,26 @@ function uniqLinks(links) { return links.filter((l, i, a) => l?.url && a.findInd
 
 async function search(q) {
   q = String(q || '').trim(); if (!q) return;
-  Object.assign(state, { query: q, loading: true, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
+  const token = ++searchToken;
+  Object.assign(state, { query: q, loading: true, loadingMore: false, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
   if (state.tab !== 'search') state.tab = 'search';
   render();
-  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q), dpla(q), europeana(q), core(q), k10plus(q), loc(q), bnf(q), dnb(q), finna(q), norway(q)]);
-  state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []), q);
+  const settle = async arr => (await Promise.allSettled(arr)).flatMap(r => r.status === 'fulfilled' ? r.value : []);
+  // Phase 1: fast keyless sources — show results quickly.
+  const fast = await settle([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q)]);
+  if (token !== searchToken) return; // a newer search superseded this one
+  state.results = merge(fast, q);
   state.loading = false;
-  state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';
-  render();
+  state.loadingMore = true;
+  if (state.tab === 'search') render();
   document.querySelector('#results')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  // Phase 2: slower proxied / national catalogs — fill in.
+  const slow = await settle([dpla(q), europeana(q), core(q), k10plus(q), loc(q), bnf(q), dnb(q), finna(q), norway(q)]);
+  if (token !== searchToken) return;
+  state.results = merge(fast.concat(slow), q);
+  state.loadingMore = false;
+  state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';
+  if (state.tab === 'search') render();
 }
 
 function filtered() { return state.results.filter(b => (state.filters.source === 'all' || b.sources.includes(state.filters.source)) && (state.filters.language === 'all' || b.langs.includes(state.filters.language)) && (state.filters.availability === 'all' || (state.filters.availability === 'free' ? /free|public|read|borrow/i.test(b.availability) : /preview|sale|catalog/i.test(b.availability)))); }
@@ -443,7 +455,7 @@ function bookCard(b) {
 function resultsSection() {
   const books = filtered();
   const shown = books.slice(0, state.limit);
-  const head = `<div class="section-head"><div class="titles"><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching the catalogs…' : `${books.length} result${books.length === 1 ? '' : 's'}`}</h2>${!state.loading && state.results.length ? `<p>Merged across ${sourceList().length} source${sourceList().length === 1 ? '' : 's'} and ranked by metadata completeness.</p>` : ''}</div>
+  const head = `<div class="section-head"><div class="titles"><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching the catalogs…' : `${books.length} result${books.length === 1 ? '' : 's'}`}</h2>${!state.loading && state.results.length ? `<p>Merged across ${sourceList().length} source${sourceList().length === 1 ? '' : 's'} and ranked by relevance.${state.loadingMore ? ' <span class="loading-more">searching more catalogs…</span>' : ''}</p>` : ''}</div>
     ${state.results.length ? `<div class="filters">
       <select data-filter="source"><option value="all">All sources</option>${sourceList().map(s => `<option ${state.filters.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
       <select data-filter="availability"><option value="all">All availability</option><option value="free" ${state.filters.availability === 'free' ? 'selected' : ''}>Readable / free</option><option value="preview" ${state.filters.availability === 'preview' ? 'selected' : ''}>Preview / catalog</option></select>

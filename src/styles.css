@@ -129,6 +129,8 @@ a { color: inherit; }
 
 /* ---------- notices ---------- */
 .notice { color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; line-height: 1.55; }
+.loading-more { color: var(--clay); font-weight: 600; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
 .show-more { display: block; margin: 24px auto 0; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); padding: 11px 24px; border-radius: 999px; font-weight: 500; cursor: pointer; }
 .show-more:hover { border-color: var(--clay); color: var(--clay); }
 
