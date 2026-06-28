@@ -51,7 +51,7 @@ const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
 const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', asking: false, askError: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '' };
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
@@ -409,6 +409,7 @@ async function askLibrarian(text) {
     const r = await fetch('/.netlify/functions/librarian', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: state.ask, query: state.query, books, shelf }) });
     const data = await r.json();
     state.reply = data.text || '';
+    state.replyModel = data.model || '';
     state.askError = data.text ? '' : (data.error || 'The librarian could not respond. Try again.');
   } catch { state.askError = 'Could not reach the AI Librarian (it runs on the deployed site, not local dev).'; }
   state.asking = false; render();
@@ -489,7 +490,7 @@ function aiTab() {
         <button class="btn-primary" ${state.asking || !n ? 'disabled' : ''}>${state.asking ? 'Reading…' : 'Ask Librarian'}</button>
         ${n ? `<div class="ai-samples">${samples.map(s => `<button type="button" data-ask="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : '<p class="ai-note">No active search yet. Run a query on the Search tab, then come back.</p>'}
       </form>
-      <div class="ai-answer"><p class="label">Recommendation</p>${answer}<p class="ai-note">Powered by Claude via Netlify AI Gateway — recommends only from titles your search actually found.</p></div>
+      <div class="ai-answer"><p class="label">Recommendation</p>${answer}<p class="ai-note">${state.reply && state.replyModel ? `Answered by ${esc(state.replyModel)} · ` : ''}Free via Netlify AI Gateway, with automatic fallback across Claude, GPT-4o-mini, and Gemini. Recommends only from titles your search found.</p></div>
     </div></div></section>`;
 }
 
