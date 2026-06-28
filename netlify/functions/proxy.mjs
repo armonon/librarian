@@ -13,6 +13,7 @@ const TARGETS = {
   bnf: q => ({ url: `http://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve&query=bib.anywhere%20all%20%22${q}%22&recordSchema=dublincore&maximumRecords=100` }),
   dnb: q => ({ url: `https://services.dnb.de/sru/dnb?version=1.1&operation=searchRetrieve&query=${q}&recordSchema=oai_dc&maximumRecords=100` }),
   finna: q => ({ url: `https://api.finna.fi/api/v1/search?lookfor=${q}&type=AllFields&limit=80&field[]=id&field[]=title&field[]=year&field[]=nonPresenterAuthors&field[]=languages&field[]=subjects&field[]=formats&field[]=cleanIsbn&field[]=images` }),
+  norway: q => ({ url: `https://api.nb.no/catalog/v1/items?q=${q}&size=80` }),
 };
 
 export default async (req) => {

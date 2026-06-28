@@ -65,7 +65,7 @@ function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return '
 function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
 function coverInner(b, cls = 'book') { return b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
-const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF', 'DNB': 'DNB', 'Finna': 'FIN' };
+const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF', 'DNB': 'DNB', 'Finna': 'FIN', 'Nasjonalbiblioteket': 'NB' };
 function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
 function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
 
@@ -77,6 +77,7 @@ const ICON = {
   x: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
   book: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  stack: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
 };
 
 async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
@@ -85,7 +86,7 @@ async function text(url) { const c = new AbortController(); const t = setTimeout
 async function openLibrary(q) {
   const settled = await Promise.allSettled(OPEN_LIBRARY_OFFSETS.map(offset => json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=100&offset=${offset}&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average,number_of_pages_median`)));
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.docs || []) : []).map(d => ({
-    id: `ol:${d.key}`, title: d.title, authors: uniq(d.author_name).slice(0, 4), year: d.first_publish_year || '', pages: d.number_of_pages_median || '', subjects: uniq(d.subject).slice(0, 14), langs: uniq(d.language).slice(0, 4), ids: uniq(d.isbn).slice(0, 8),
+    id: `ol:${d.key}`, work: /^\/works\//.test(d.key || '') ? d.key : '', title: d.title, authors: uniq(d.author_name).slice(0, 4), year: d.first_publish_year || '', pages: d.number_of_pages_median || '', subjects: uniq(d.subject).slice(0, 14), langs: uniq(d.language).slice(0, 4), ids: uniq(d.isbn).slice(0, 8),
     cover: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : '',
     desc: `${d.edition_count || 1} edition${d.edition_count === 1 ? '' : 's'} indexed by Open Library${d.ratings_average ? ` • average rating ${d.ratings_average.toFixed(1)}` : ''}.`,
     availability: d.ebook_access === 'public' || d.ia?.length ? 'Readable / borrowable' : 'Catalog only',
@@ -243,16 +244,44 @@ async function finna(q) {
   });
 }
 
-function merge(all) {
+async function norway(q) {
+  const data = await json(`${PROXY}?api=norway&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`);
+  return (data?._embedded?.items || []).filter(it => (it.metadata?.mediaTypes || []).some(m => /bøker|book/i.test(m))).map(it => {
+    const m = it.metadata || {}, ln = it._links || {}, isbns = [].concat(m.identifiers?.isbn || []).filter(Boolean), wc = isbnOf(isbns);
+    const thumb = ln.thumbnail_large || ln.thumbnail_custom || ln.thumbnail_small;
+    return {
+      id: `nb:${it.id}`, title: m.title, authors: uniq(m.creators).slice(0, 4), year: year(m.originInfo?.issued), pages: '',
+      subjects: uniq([].concat(m.subjects || [])).slice(0, 10), langs: uniq((m.languages || []).map(l => l.code || l)).slice(0, 3), ids: uniq(isbns).slice(0, 8),
+      cover: thumb ? (thumb.href || thumb) : '', desc: 'Catalog record from the National Library of Norway.', availability: 'Catalog only',
+      links: uniqLinks([{ label: 'Nasjonalbiblioteket', url: `https://www.nb.no/items/${it.id}` }, ...(wc ? [{ label: 'Find in a library (WorldCat)', url: `https://search.worldcat.org/isbn/${wc}` }] : [])]),
+      sources: ['Nasjonalbiblioteket']
+    };
+  });
+}
+
+function tokenize(q) { return String(q || '').replace(/^isbn:/i, '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 2); }
+function relevance(book, toks) {
+  if (!toks.length) return 0;
+  const title = (book.title || '').toLowerCase(), hay = `${title} ${(book.authors || []).join(' ').toLowerCase()}`;
+  let rel = toks.filter(t => hay.includes(t)).length / toks.length;
+  const phrase = toks.join(' ');
+  if (title.includes(phrase)) rel += 0.3;
+  if (title === phrase) rel += 0.4;
+  return Math.min(rel, 1.3);
+}
+function merge(all, q) {
   const map = new Map();
   for (const b of all.filter(x => x?.title)) {
     const k = key(b);
     const old = map.get(k);
-    if (!old) { b.score = score(b); map.set(k, b); continue; }
-    const next = { ...old, title: old.title || b.title, year: old.year || b.year, pages: old.pages || b.pages, cover: old.cover || b.cover, desc: (old.desc || '').length >= (b.desc || '').length ? old.desc : b.desc, availability: /free|read|borrow|preview/i.test(old.availability) ? old.availability : b.availability, authors: uniq([old.authors, b.authors]), subjects: uniq([old.subjects, b.subjects]).slice(0, 16), ids: uniq([old.ids, b.ids]), langs: uniq([old.langs, b.langs]), links: uniqLinks([...(old.links || []), ...(b.links || [])]), sources: uniq([old.sources, b.sources]) };
-    next.score = score(next); map.set(k, next);
+    if (!old) { map.set(k, b); continue; }
+    const next = { ...old, work: old.work || b.work, title: old.title || b.title, year: old.year || b.year, pages: old.pages || b.pages, cover: old.cover || b.cover, desc: (old.desc || '').length >= (b.desc || '').length ? old.desc : b.desc, availability: /free|read|borrow|preview/i.test(old.availability) ? old.availability : b.availability, authors: uniq([old.authors, b.authors]), subjects: uniq([old.subjects, b.subjects]).slice(0, 16), ids: uniq([old.ids, b.ids]), langs: uniq([old.langs, b.langs]), links: uniqLinks([...(old.links || []), ...(b.links || [])]), sources: uniq([old.sources, b.sources]) };
+    map.set(k, next);
   }
-  return [...map.values()].sort((a, b) => b.score - a.score || Number(b.year || 0) - Number(a.year || 0));
+  const toks = tokenize(q);
+  const out = [...map.values()];
+  for (const b of out) { b.score = score(b); b.held = uniq(b.sources).length; b.rank = relevance(b, toks) + (b.score / 100) * 0.6 + Math.min(b.held - 1, 4) * 0.08; }
+  return out.sort((a, b) => b.rank - a.rank || Number(b.year || 0) - Number(a.year || 0));
 }
 function uniqLinks(links) { return links.filter((l, i, a) => l?.url && a.findIndex(x => x.url === l.url) === i); }
 
@@ -261,8 +290,8 @@ async function search(q) {
   Object.assign(state, { query: q, loading: true, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
   if (state.tab !== 'search') state.tab = 'search';
   render();
-  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q), dpla(q), europeana(q), core(q), k10plus(q), loc(q), bnf(q), dnb(q), finna(q)]);
-  state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []));
+  const out = await Promise.allSettled([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q), dpla(q), europeana(q), core(q), k10plus(q), loc(q), bnf(q), dnb(q), finna(q), norway(q)]);
+  state.results = merge(out.flatMap(r => r.status === 'fulfilled' ? r.value : []), q);
   state.loading = false;
   state.error = !state.results.length ? 'The live APIs returned nothing useful. Try a broader title, author, subject, or ISBN.' : '';
   render();
@@ -348,9 +377,11 @@ function features() {
 
 function bookCard(b) {
   const saved = state.saved.some(x => key(x) === key(b));
-  const tags = uniq(b.sources).map(s => `<span class="tag">${esc(SRC_TAG[s] || s)}</span>`).join('');
+  const srcs = uniq(b.sources), held = b.held || srcs.length;
+  const tags = srcs.slice(0, 4).map(s => `<span class="tag">${esc(SRC_TAG[s] || s)}</span>`).join('') + (srcs.length > 4 ? `<span class="tag more">+${srcs.length - 4}</span>` : '');
   const meta = [category(b), b.year, b.pages ? `${b.pages} pp` : ''].filter(Boolean).join(' · ');
   const dot = b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low';
+  const right = held > 1 ? `<span class="held" title="Found in ${held} catalogs">${ICON.stack} ${held} catalogs</span>` : `<span class="score" title="Metadata completeness"><span class="dot ${dot}"></span>${b.score}%</span>`;
   return `<article class="book" data-select="${esc(b.id)}">
     <div class="book-cover">${coverInner(b)}</div>
     <div class="book-main">
@@ -358,7 +389,7 @@ function bookCard(b) {
       <h3 class="book-title">${esc(b.title)}</h3>
       <p class="book-author">${esc(b.authors?.join(', ') || 'Unknown author')}</p>
       <p class="book-meta">${esc(meta)}</p>
-      <div class="book-foot"><span class="pill ${availClass(b.availability)}">${esc(availLabel(b.availability))}</span><span class="score" title="Metadata completeness"><span class="dot ${dot}"></span>${b.score}%</span></div>
+      <div class="book-foot"><span class="pill ${availClass(b.availability)}">${esc(availLabel(b.availability))}</span>${right}</div>
     </div>
     <button class="book-save ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}" aria-label="${saved ? 'Remove from shelf' : 'Save to shelf'}">${saved ? ICON.bookmarkFill : ICON.bookmark}</button>
   </article>`;
@@ -426,12 +457,13 @@ function modal() {
         <p class="eyebrow">${esc(category(b))}</p>
         <h2>${esc(b.title)}</h2>
         <p class="modal-author">${esc(b.authors?.join(', ') || 'Unknown author')}</p>
-        <div class="modal-row"><span class="pill ${availClass(b.availability)}">${esc(b.availability || 'Catalog only')}</span>${meta ? `<span class="score"><span class="dot ${b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low'}"></span>${b.score}% complete</span>` : ''}</div>
+        <div class="modal-row"><span class="pill ${availClass(b.availability)}">${esc(b.availability || 'Catalog only')}</span>${(b.held || 1) > 1 ? `<span class="held">${ICON.stack} in ${b.held} catalogs</span>` : ''}<span class="score"><span class="dot ${b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low'}"></span>${b.score}% complete</span></div>
         ${meta ? `<p class="book-meta" style="margin-bottom:18px">${esc(meta)}</p>` : ''}
         ${b.desc ? `<p class="modal-desc">${esc(b.desc)}</p>` : ''}
         ${b.subjects?.length ? `<div class="modal-section"><h4>Subjects</h4><div class="chips" style="display:flex;flex-wrap:wrap;gap:6px">${uniq(b.subjects).slice(0, 10).map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div></div>` : ''}
         ${ids.length ? `<div class="modal-section"><h4>Identifiers</h4><div class="id-list">${ids.map(i => `<code>${esc(i)}</code>`).join('')}</div></div>` : ''}
         ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
+        ${b.work ? `<div class="modal-section"><h4>Editions</h4><button class="btn-ghost" data-editions="${esc(b.work)}">${ICON.stack} Show all editions</button><div class="editions"></div></div>` : ''}
         <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button></div>
       </div>
     </div>
@@ -458,7 +490,24 @@ function bind() {
   document.querySelectorAll('[data-save]').forEach(el => el.onclick = e => { e.stopPropagation(); toggleSave(el.dataset.save); });
   document.querySelectorAll('[data-remove]').forEach(el => el.onclick = e => { e.stopPropagation(); remove(el.dataset.remove); });
   document.querySelectorAll('[data-select]').forEach(el => el.onclick = () => { state.selected = state.results.find(b => b.id === el.dataset.select) || state.saved.find(b => b.id === el.dataset.select); render(); });
-  document.querySelectorAll('[data-close]').forEach(el => el.onclick = e => { if (e.target.closest('.modal') && !e.target.closest('[data-close]')) return; state.selected = null; render(); });
+  const bd = document.querySelector('.backdrop');
+  if (bd) bd.onclick = e => { if (e.target === bd || e.target.closest('.modal-close')) { state.selected = null; render(); } };
+  document.querySelectorAll('[data-editions]').forEach(el => el.onclick = e => { e.stopPropagation(); loadEditions(el.dataset.editions, el); });
+}
+
+async function loadEditions(work, btn) {
+  const box = btn.nextElementSibling;
+  btn.disabled = true; btn.textContent = 'Loading editions…';
+  try {
+    const data = await json(`https://openlibrary.org${work}/editions.json?limit=50`);
+    const rows = (data.entries || []).map(e => {
+      const isbn = (e.isbn_13 || e.isbn_10 || [])[0];
+      const meta = [e.publishers?.[0], year(e.publish_date), e.number_of_pages ? `${e.number_of_pages} pp` : '', isbn].filter(Boolean).join(' · ');
+      return `<div class="edition-row"><strong>${esc(e.title || 'Untitled edition')}</strong><span>${esc(meta)}</span></div>`;
+    }).join('');
+    box.innerHTML = rows || '<p class="notice">No separate editions listed.</p>';
+    btn.remove();
+  } catch { btn.disabled = false; btn.innerHTML = `${ICON.stack} Show all editions`; box.innerHTML = '<p class="notice">Could not load editions.</p>'; }
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.selected) { state.selected = null; render(); } });
