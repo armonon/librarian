@@ -165,6 +165,7 @@ a { color: inherit; }
 .sources .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 14px; }
 .sources .badge { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
 .sources .priority { color: var(--clay); font-size: 0.74rem; font-weight: 600; text-align: right; }
+.live-pill { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--green); background: var(--green-soft); border-radius: 6px; padding: 2px 8px; }
 .sources h3 { font-family: var(--serif); font-weight: 500; font-size: 1.2rem; margin: 0 0 8px; }
 .sources p { color: var(--muted); line-height: 1.5; margin: 0 0 12px; font-size: 0.9rem; }
 .sources .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }

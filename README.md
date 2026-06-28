@@ -4,16 +4,22 @@ A multi-source open book atlas for discovering, organizing, and verifying books 
 
 ## What it does now
 
-- Live federated search across:
-  - Open Library
-  - Google Books
-  - Gutendex / Project Gutenberg
-- Merges duplicate-looking records by ISBN or title/author fingerprint.
-- Ranks results by a metadata completeness score (shown on every card and in the detail view).
-- Data-rich result cards: cover, source tags, normalized category, year, page count, availability, and score.
-- Detail modal surfacing description, all identifiers, subjects, every source link, and provenance.
+- **Live federated search across 15 catalogs**, fanned out in parallel:
+  - Trade/general: Open Library, Google Books, Gutendex / Project Gutenberg
+  - Academic: OpenAlex, Crossref, CORE
+  - Digitized / archives: Internet Archive, DPLA, Europeana, Finna
+  - Union / national catalogs: K10plus (~200M), Library of Congress, BnF, DNB, Nasjonalbiblioteket (Norway)
+  - Plus keyless WorldCat "find in a library" link-outs by ISBN.
+- **Cross-source dedup** via union-find clustering: records merge if they share any ISBN *or* a fuzzy title+author fingerprint, so ISBN-less records still merge across sources.
+- **Relevance-blended ranking**: query relevance + metadata completeness + catalog count.
+- Result cards show cover, source tags, normalized category, year, page count, availability, score, and an **"in N catalogs"** breadth badge.
+- Detail modal surfaces description, all identifiers, subjects, every source link, provenance, and an **Open Library editions expander** (every edition of a work on demand).
 - Filters by source, language, and availability; paginated with "show more".
 - Saves books into a local browser shelf, with a live shelf count in the nav.
+
+### Architecture
+
+Keyless, CORS-friendly sources are called directly from the browser. Keyed or no-CORS sources (CORE, DPLA, Europeana, and the SRU/JSON national catalogs) go through a Netlify Function proxy (`netlify/functions/proxy.mjs`) that holds the API keys server-side — keys live in Netlify env vars or a gitignored `netlify/functions/_keys.mjs`, never in the client bundle or git.
 
 ### Tabs
 
@@ -34,6 +40,16 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Deploy
+
+The live site (Netlify) does **not** auto-deploy from GitHub. Deploy manually:
+
+```bash
+npm run build && netlify deploy --prod --dir=dist
+```
+
+Set the proxy API keys as Netlify env vars (`DPLA_KEY`, `EUROPEANA_KEY`, `CORE_KEY`) or in a gitignored `netlify/functions/_keys.mjs`.
 
 ## Research
 
