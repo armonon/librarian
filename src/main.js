@@ -336,6 +336,7 @@ async function search(q) {
   const token = ++searchToken;
   Object.assign(state, { query: q, loading: true, loadingMore: false, searched: true, error: '', limit: PAGE_SIZE, filters: { source: 'all', availability: 'all', language: 'all' } });
   if (state.tab !== 'search') state.tab = 'search';
+  try { history.replaceState(null, '', `${location.pathname}?q=${encodeURIComponent(q)}`); } catch {}
   render();
   const settle = async arr => (await Promise.allSettled(arr)).flatMap(r => r.status === 'fulfilled' ? r.value : []);
   // Phase 1: fast keyless sources — show results quickly.
@@ -569,4 +570,6 @@ async function loadEditions(work, btn) {
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.selected) { state.selected = null; render(); } });
+const initialQuery = new URLSearchParams(location.search).get('q');
 render();
+if (initialQuery) search(initialQuery);
