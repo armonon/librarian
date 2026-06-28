@@ -51,7 +51,7 @@ const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
 const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', asking: false, askError: '' };
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
@@ -391,29 +391,27 @@ function syncShelfCount() {
   else if (badge) badge.remove();
 }
 
-function askLibrarian(text) {
+function renderMd(s) {
+  return esc(s)
+    .replace(/^#{1,6}\s*(.+)$/gm, '<strong class="md-h">$1</strong>')
+    .replace(/^\s*---+\s*$/gm, '<span class="md-hr"></span>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+}
+async function askLibrarian(text) {
   state.ask = String(text || '').trim();
-  if (!state.ask) { state.reply = ''; render(); return; }
-  const shelf = state.saved;
-  const cats = uniq(shelf.map(category)).slice(0, 4);
-  const authors = uniq(shelf.flatMap(b => b.authors || [])).slice(0, 4);
-  if (!shelf.length) {
-    state.reply = `You asked: “${state.ask}”\n\nYour shelf is empty, so there's nothing to build a path from yet.\nSearch for a title, author, or subject and save 3–5 results, then ask again — I'll draft a reading order across them.`;
-  } else {
-    state.reply = [
-      `You asked: “${state.ask}”`,
-      ``,
-      `Working from your shelf — ${cats.join(', ') || 'saved books'}${authors.length ? ` (authors: ${authors.join(', ')})` : ''}.`,
-      ``,
-      `Suggested path:`,
-      `1. Start with the most complete record on your shelf as an anchor.`,
-      `2. Read one adjacent category (${cats[1] || cats[0] || 'a related subject'}) to widen context.`,
-      `3. Compare two authors across time to see how the idea evolves.`,
-      ``,
-      `Gaps to fill: search “${cats[0] || state.ask}” and save the highest-scoring results to extend the path.`,
-    ].join('\n');
-  }
-  render();
+  if (!state.ask) { state.reply = ''; state.askError = ''; render(); return; }
+  if (!state.results.length) { state.reply = ''; state.askError = 'Run a search first — the librarian recommends from the books your search found.'; render(); return; }
+  state.asking = true; state.reply = ''; state.askError = ''; render();
+  const books = state.results.slice(0, 80).map(b => ({ title: b.title, authors: (b.authors || []).join(', '), year: b.year, category: category(b), availability: b.availability }));
+  const shelf = state.saved.slice(0, 20).map(b => ({ title: b.title, authors: (b.authors || []).join(', ') }));
+  try {
+    const r = await fetch('/.netlify/functions/librarian', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: state.ask, query: state.query, books, shelf }) });
+    const data = await r.json();
+    state.reply = data.text || '';
+    state.askError = data.text ? '' : (data.error || 'The librarian could not respond. Try again.');
+  } catch { state.askError = 'Could not reach the AI Librarian (it runs on the deployed site, not local dev).'; }
+  state.asking = false; render();
 }
 
 /* ---------- views ---------- */
@@ -474,14 +472,24 @@ function searchTab() {
 }
 
 function aiTab() {
-  const shelf = state.saved.slice(0, 6);
-  const context = shelf.length
-    ? `<div class="mini-shelf">${shelf.map(b => `<button data-query="${esc(category(b))}"><strong>${esc(b.title)}</strong><span>${esc(category(b))}</span></button>`).join('')}</div>`
-    : '<p class="notice">No saved books yet. Save a few search results to give the librarian context.</p>';
-  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">AI Librarian</p><h2>Ask for a reading path.</h2><p>Drafts a route through your saved shelf — similar books, a reading order, or a category map.</p></div></div>
+  const n = state.results.length, scanning = Math.min(n, 80);
+  const ctx = n
+    ? `Reads the ${scanning} top result${scanning === 1 ? '' : 's'} from your search${state.query ? ` for “${esc(state.query)}”` : ''} and recommends specific titles.`
+    : 'Search for books first — the librarian recommends from the results your search finds.';
+  const samples = ['Which should I start with?', 'Pick the 3 most beginner-friendly', 'Build me a reading path', 'What\'s the most essential one here?'];
+  let answer;
+  if (state.asking) answer = `<div class="ai-loading"><span class="spinner"></span>Reading ${scanning} books…</div>`;
+  else if (state.reply) answer = `<div class="ai-reply">${renderMd(state.reply)}</div>`;
+  else if (state.askError) answer = `<p class="notice">${esc(state.askError)}</p>`;
+  else answer = '<p class="notice">Ask a question to get specific picks from your search results.</p>';
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">AI Librarian</p><h2>Ask for a recommendation.</h2><p>${ctx}</p></div></div>
     <div class="ai-grid">
-      <form class="ai-ask" data-ask-form><textarea name="ask" placeholder="Ask for similar books, a reading order, or a category map…">${esc(state.ask)}</textarea><button class="btn-primary">Ask Librarian</button></form>
-      <div class="ai-answer"><p class="label">Shelf context</p>${context}${state.reply ? `<div class="ai-reply">${esc(state.reply)}</div>` : '<p class="notice">Ask a question to draft a path from your shelf.</p>'}<p class="ai-note">Offline draft generated from your shelf. Wire this panel to a model for richer, generative answers.</p></div>
+      <form class="ai-ask" data-ask-form>
+        <textarea name="ask" placeholder="e.g. which of these should I read first, and why?">${esc(state.ask)}</textarea>
+        <button class="btn-primary" ${state.asking || !n ? 'disabled' : ''}>${state.asking ? 'Reading…' : 'Ask Librarian'}</button>
+        ${n ? `<div class="ai-samples">${samples.map(s => `<button type="button" data-ask="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : '<p class="ai-note">No active search yet. Run a query on the Search tab, then come back.</p>'}
+      </form>
+      <div class="ai-answer"><p class="label">Recommendation</p>${answer}<p class="ai-note">Powered by Claude via Netlify AI Gateway — recommends only from titles your search actually found.</p></div>
     </div></div></section>`;
 }
 
@@ -542,6 +550,7 @@ function repaintResults() { const el = document.querySelector('#results'); if (e
 function bind() {
   document.querySelector('[data-form]')?.addEventListener('submit', e => { e.preventDefault(); search(new FormData(e.currentTarget).get('q')); });
   document.querySelector('[data-ask-form]')?.addEventListener('submit', e => { e.preventDefault(); askLibrarian(new FormData(e.currentTarget).get('ask')); });
+  document.querySelectorAll('[data-ask]').forEach(el => el.onclick = () => askLibrarian(el.dataset.ask));
   document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; window.scrollTo({ top: 0 }); render(); });
   document.querySelectorAll('[data-query]').forEach(el => el.onclick = () => { state.tab = 'search'; search(el.dataset.query); });
   document.querySelectorAll('[data-filter]').forEach(el => el.onchange = () => { state.filters[el.dataset.filter] = el.value; state.limit = PAGE_SIZE; repaintResults(); });
