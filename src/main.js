@@ -269,17 +269,52 @@ function relevance(book, toks) {
   if (title === phrase) rel += 0.4;
   return Math.min(rel, 1.3);
 }
-function merge(all, q) {
-  const map = new Map();
-  for (const b of all.filter(x => x?.title)) {
-    const k = key(b);
-    const old = map.get(k);
-    if (!old) { map.set(k, b); continue; }
-    const next = { ...old, work: old.work || b.work, title: old.title || b.title, year: old.year || b.year, pages: old.pages || b.pages, cover: old.cover || b.cover, desc: (old.desc || '').length >= (b.desc || '').length ? old.desc : b.desc, availability: /free|read|borrow|preview/i.test(old.availability) ? old.availability : b.availability, authors: uniq([old.authors, b.authors]), subjects: uniq([old.subjects, b.subjects]).slice(0, 16), ids: uniq([old.ids, b.ids]), langs: uniq([old.langs, b.langs]), links: uniqLinks([...(old.links || []), ...(b.links || [])]), sources: uniq([old.sources, b.sources]) };
-    map.set(k, next);
+// ---- fuzzy dedup helpers ----
+const strip = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+function normTitle(t = '') { return strip(t).split(/[:/]/)[0].replace(/^(the|a|an|le|la|les|el|der|die|das)\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).slice(0, 8).join(' '); }
+function authorKey(authors = []) {
+  const a = strip(authors[0]); if (!a) return '';
+  let surname, first;
+  if (a.includes(',')) { const p = a.split(','); surname = p[0]; first = (p[1] || '').trim(); }
+  else { const w = a.replace(/[^a-z\s.]/g, '').split(/\s+/).filter(Boolean); surname = w[w.length - 1] || ''; first = w[0] || ''; }
+  surname = surname.replace(/[^a-z]/g, '');
+  return surname ? `${surname}-${(first || '')[0] || ''}` : '';
+}
+function fingerprint(b) { const t = normTitle(b.title), ak = authorKey(b.authors); return (t.length >= 2 && ak) ? `${t}|${ak}` : ''; }
+function normIsbns(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '').toUpperCase()).filter(x => /^(\d{9}[\dX]|\d{13})$/.test(x)); }
+function dedupeAuthors(list) {
+  const seen = new Map();
+  for (const a of list) {
+    if (!a) continue;
+    const norm = strip(a).replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(t => t.length > 1).sort().join(' ');
+    if (!seen.has(norm)) seen.set(norm, a);
+    else if (seen.get(norm).includes(',') && !a.includes(',')) seen.set(norm, a); // prefer "First Last" display
   }
+  return [...seen.values()].slice(0, 5);
+}
+function combine(a, b) {
+  return { ...a, work: a.work || b.work, title: a.title || b.title, year: a.year || b.year, pages: a.pages || b.pages, cover: a.cover || b.cover,
+    desc: (a.desc || '').length >= (b.desc || '').length ? a.desc : b.desc,
+    availability: /free|read|borrow|preview/i.test(a.availability) ? a.availability : b.availability,
+    authors: dedupeAuthors([...(a.authors || []), ...(b.authors || [])]),
+    subjects: uniq([a.subjects, b.subjects]).slice(0, 16), ids: uniq([a.ids, b.ids]), langs: uniq([a.langs, b.langs]),
+    links: uniqLinks([...(a.links || []), ...(b.links || [])]), sources: uniq([a.sources, b.sources]) };
+}
+function merge(all, q) {
+  const recs = all.filter(x => x?.title);
+  const parent = recs.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  const isbnMap = new Map(), fpMap = new Map();
+  recs.forEach((r, i) => {
+    for (const is of normIsbns(r.ids)) { if (isbnMap.has(is)) union(i, isbnMap.get(is)); else isbnMap.set(is, i); }
+    const fp = fingerprint(r);
+    if (fp) { if (fpMap.has(fp)) union(i, fpMap.get(fp)); else fpMap.set(fp, i); }
+  });
+  const groups = new Map();
+  recs.forEach((r, i) => { const root = find(i); (groups.get(root) || groups.set(root, []).get(root)).push(r); });
   const toks = tokenize(q);
-  const out = [...map.values()];
+  const out = [...groups.values()].map(g => g.reduce(combine));
   for (const b of out) { b.score = score(b); b.held = uniq(b.sources).length; b.rank = relevance(b, toks) + (b.score / 100) * 0.6 + Math.min(b.held - 1, 4) * 0.08; }
   return out.sort((a, b) => b.rank - a.rank || Number(b.year || 0) - Number(a.year || 0));
 }
