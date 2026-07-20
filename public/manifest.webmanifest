@@ -1,0 +1,17 @@
+{
+  "name": "Librarian — the open book atlas",
+  "short_name": "Librarian",
+  "description": "Search 15 book catalogs at once, get AI recommendations, and read your PDFs in Day, Natural, or Dark mode.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14110d",
+  "theme_color": "#14110d",
+  "categories": ["books", "education", "productivity"],
+  "icons": [
+    { "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

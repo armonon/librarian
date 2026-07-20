@@ -708,3 +708,5 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (state.
 const initialQuery = new URLSearchParams(location.search).get('q');
 render();
 if (initialQuery) search(initialQuery);
+
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
