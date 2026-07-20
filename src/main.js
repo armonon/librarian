@@ -52,7 +52,7 @@ const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerMode: localStorage.getItem('librarian.readerMode') || 'day', importing: false, libError: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerMode: localStorage.getItem('librarian.readerMode') || 'natural', importing: false, libError: '' };
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
@@ -591,7 +591,7 @@ function libraryTab() {
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
       <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
-  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — Day, Natural, or Dark.</h2><p>Add PDFs you’ve downloaded and read them in-app with a color mode that suits the light. Stored privately in this browser.</p></div>
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — Natural, Day, or Dark.</h2><p>Add PDFs you’ve downloaded and read them in-app. Natural shows the file as-is; Day warms it for bright light; Dark inverts it for night. Stored privately in this browser.</p></div>
       <label class="btn-primary import-btn">${state.importing ? 'Adding…' : `${ICON.upload} Add PDF`}<input type="file" accept="application/pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /></label></div>
     ${state.libError ? `<p class="notice">${esc(state.libError)}</p>` : ''}
     ${items.length ? `<div class="pdf-grid">${cards}</div>` : '<label class="pdf-drop" data-import-label><input type="file" accept="application/pdf" multiple data-import hidden />' + `${ICON.upload}<strong>Add your first PDF</strong><span>Drop a file here or click to browse. Books you save from search results land here too.</span></label>`}
@@ -603,7 +603,7 @@ function readerOverlay() {
   const m = mode => `<button data-mode="${mode}" class="${state.readerMode === mode ? 'active' : ''}">${mode[0].toUpperCase() + mode.slice(1)}</button>`;
   return `<div class="reader" id="pdf-reader" data-mode="${esc(state.readerMode)}">
     <div class="reader-bar"><span class="reader-title">${esc(r.title)}</span>
-      <div class="reader-modes">${m('day')}${m('natural')}${m('dark')}</div>
+      <div class="reader-modes">${m('natural')}${m('day')}${m('dark')}</div>
       <button class="reader-close" data-reader-close aria-label="Close reader">${ICON.x}</button></div>
     <div class="reader-pages" id="pdf-pages"><div class="reader-msg"><span class="spinner"></span> Opening…</div></div>
   </div>`;

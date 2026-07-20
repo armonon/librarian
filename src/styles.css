@@ -266,10 +266,13 @@ a { color: inherit; }
 .pdf-slot { width: 100%; max-width: 900px; display: flex; justify-content: center; }
 .pdf-page { max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,0.4); background: #fff; }
 /* color modes */
-#pdf-reader[data-mode="day"] .reader-pages { background: #2a2620; }
-#pdf-reader[data-mode="natural"] { background: #201b12; }
-#pdf-reader[data-mode="natural"] .reader-pages { background: #241d12; }
-#pdf-reader[data-mode="natural"] .pdf-page { filter: sepia(0.42) brightness(0.97) contrast(0.92); }
+/* Natural: the file exactly as it is — no filter */
+#pdf-reader[data-mode="natural"] .reader-pages { background: #2a2620; }
+#pdf-reader[data-mode="natural"] .pdf-page { filter: none; }
+/* Day: warm, brightened paper for daylight reading */
+#pdf-reader[data-mode="day"] .reader-pages { background: #241d12; }
+#pdf-reader[data-mode="day"] .pdf-page { filter: sepia(0.38) brightness(1.03) contrast(0.95); }
+/* Dark: inverted for low light (keeps images sane) */
 #pdf-reader[data-mode="dark"] .reader-pages { background: #0c0a07; }
 #pdf-reader[data-mode="dark"] .pdf-page { filter: invert(0.92) hue-rotate(180deg) brightness(0.95) contrast(0.95); box-shadow: 0 10px 40px rgba(0,0,0,0.6); background: #111; }
 @media (max-width: 620px) { .pdf-grid { grid-template-columns: 1fr; } .reader-bar { flex-wrap: wrap; gap: 8px; } .reader-modes button { padding: 6px 10px; } .reader-pages { padding: 10px; } }
