@@ -269,8 +269,8 @@ a { color: inherit; }
 .pdf-slot { width: 100%; max-width: 900px; display: flex; justify-content: center; }
 .pdf-page { max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,0.4); background: #fff; filter: var(--pdf-filter, none); }
 #pdf-reader[data-dark="0"] .reader-pages { background: #2a2620; }
-#pdf-reader[data-dark="1"] .reader-pages { background: #0c0a07; }
-#pdf-reader[data-dark="1"] .pdf-page { box-shadow: 0 10px 40px rgba(0,0,0,0.6); background: #111; }
+#pdf-reader[data-dark="1"] .reader-pages { background: #060504; }
+#pdf-reader[data-dark="1"] .pdf-page { box-shadow: 0 6px 30px rgba(0,0,0,0.7); background: #111; border: 1px solid rgba(255,255,255,0.09); }
 @media (max-width: 620px) { .pdf-grid { grid-template-columns: 1fr; } .reader-bar { flex-wrap: wrap; gap: 8px; } .reader-tone input[type="range"] { width: 100px; } .reader-pages { padding: 10px; } }
 
 /* ---------- PWA: install banner + safe-area insets ---------- */

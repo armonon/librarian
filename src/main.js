@@ -108,7 +108,7 @@ function openReader(id) { const meta = state.library.find(x => x.id === id); if 
 function closeReader() { if (state.reader?.io) try { state.reader.io.disconnect(); } catch {} state.reader = null; render(); }
 function readerFilter() {
   const t = state.readerTone / 100;
-  if (state.readerDark) return `invert(0.92) hue-rotate(180deg) brightness(${(0.78 + t * 0.42).toFixed(3)}) contrast(0.95)`;
+  if (state.readerDark) return `invert(0.88) hue-rotate(180deg) brightness(${(0.95 + t * 0.35).toFixed(3)}) contrast(0.9)`;
   return `sepia(${(t * 0.5).toFixed(3)}) brightness(${(1 + t * 0.05).toFixed(3)}) contrast(${t > 0 ? 0.97 : 1})`;
 }
 function applyReaderFilter() { const el = document.querySelector('#pdf-reader'); if (el) { el.style.setProperty('--pdf-filter', readerFilter()); el.dataset.dark = state.readerDark ? '1' : '0'; } }
