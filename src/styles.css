@@ -272,3 +272,16 @@ a { color: inherit; }
 #pdf-reader[data-dark="1"] .reader-pages { background: #0c0a07; }
 #pdf-reader[data-dark="1"] .pdf-page { box-shadow: 0 10px 40px rgba(0,0,0,0.6); background: #111; }
 @media (max-width: 620px) { .pdf-grid { grid-template-columns: 1fr; } .reader-bar { flex-wrap: wrap; gap: 8px; } .reader-tone input[type="range"] { width: 100px; } .reader-pages { padding: 10px; } }
+
+/* ---------- PWA: install banner + safe-area insets ---------- */
+.install-banner { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 70; display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100% - 28px); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 14px; padding: 11px 12px 11px 16px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); font-size: 0.9rem; color: var(--text); line-height: 1.4; }
+.install-banner span { color: var(--muted); }
+.install-banner strong { color: var(--text); font-weight: 600; }
+.install-banner .btn-primary { padding: 8px 16px; white-space: nowrap; }
+.install-x { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; color: var(--faint); cursor: pointer; border-radius: 7px; }
+.install-x:hover { color: var(--text); }
+
+.topbar { padding-top: env(safe-area-inset-top); }
+.topbar .wrap { padding-left: max(0px, env(safe-area-inset-left)); padding-right: max(0px, env(safe-area-inset-right)); }
+.reader-bar { padding-top: calc(12px + env(safe-area-inset-top)); }
+.reader-pages { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }

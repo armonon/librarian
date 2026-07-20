@@ -720,3 +720,19 @@ render();
 if (initialQuery) search(initialQuery);
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+
+/* ---------- PWA install affordance ---------- */
+let deferredInstall = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+function installBanner(inner) {
+  if (isStandalone() || localStorage.getItem('librarian.installDismissed') === '1' || document.querySelector('.install-banner')) return;
+  const el = document.createElement('div'); el.className = 'install-banner';
+  el.innerHTML = `${inner}<button class="install-x" aria-label="Dismiss">${ICON.x}</button>`;
+  document.body.appendChild(el);
+  el.querySelector('.install-x').onclick = () => { el.remove(); localStorage.setItem('librarian.installDismissed', '1'); };
+  el.querySelector('[data-install]')?.addEventListener('click', async () => { if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; } el.remove(); });
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; installBanner('<span>Install <strong>Librarian</strong> as an app.</span><button class="btn-primary" data-install>Install</button>'); });
+window.addEventListener('appinstalled', () => document.querySelector('.install-banner')?.remove());
+if (isIOS() && !isStandalone()) setTimeout(() => installBanner('<span>Add <strong>Librarian</strong> to your Home Screen: tap Share, then <strong>Add to Home Screen</strong>.</span>'), 2500);
