@@ -52,7 +52,7 @@ const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerMode: localStorage.getItem('librarian.readerMode') || 'natural', importing: false, libError: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerTone: Math.max(0, Math.min(100, +(localStorage.getItem('librarian.readerTone') ?? 0))), importing: false, libError: '' };
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
@@ -106,7 +106,14 @@ async function saveResultPdf(book) {
 
 function openReader(id) { const meta = state.library.find(x => x.id === id); if (!meta) return; state.reader = { id, title: meta.title, painted: false, io: null }; render(); }
 function closeReader() { if (state.reader?.io) try { state.reader.io.disconnect(); } catch {} state.reader = null; render(); }
-function setReaderMode(mode) { state.readerMode = mode; localStorage.setItem('librarian.readerMode', mode); const el = document.querySelector('#pdf-reader'); if (el) el.dataset.mode = mode; document.querySelectorAll('.reader-modes button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode)); }
+function readerFilter() {
+  const t = state.readerTone / 100;
+  if (state.readerDark) return `invert(0.92) hue-rotate(180deg) brightness(${(0.78 + t * 0.42).toFixed(3)}) contrast(0.95)`;
+  return `sepia(${(t * 0.5).toFixed(3)}) brightness(${(1 + t * 0.05).toFixed(3)}) contrast(${t > 0 ? 0.97 : 1})`;
+}
+function applyReaderFilter() { const el = document.querySelector('#pdf-reader'); if (el) { el.style.setProperty('--pdf-filter', readerFilter()); el.dataset.dark = state.readerDark ? '1' : '0'; } }
+function setReaderTone(v) { state.readerTone = Math.max(0, Math.min(100, +v || 0)); localStorage.setItem('librarian.readerTone', state.readerTone); applyReaderFilter(); }
+function toggleReaderDark() { state.readerDark = !state.readerDark; localStorage.setItem('librarian.readerDark', state.readerDark ? '1' : '0'); const btn = document.querySelector('[data-dark-toggle]'); if (btn) { btn.classList.toggle('active', state.readerDark); btn.innerHTML = `${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}`; } applyReaderFilter(); }
 async function paintReader() {
   const box = document.querySelector('#pdf-pages'); if (!box || state.reader.painted) return;
   state.reader.painted = true;
@@ -177,6 +184,8 @@ const ICON = {
   stack: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
   upload: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8 12 3 7 8"/><path d="M12 3v12"/></svg>',
   read: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+  sun: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg>',
+  moon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
 };
 
 async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
@@ -591,7 +600,7 @@ function libraryTab() {
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
       <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
-  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — Natural, Day, or Dark.</h2><p>Add PDFs you’ve downloaded and read them in-app. Natural shows the file as-is; Day warms it for bright light; Dark inverts it for night. Stored privately in this browser.</p></div>
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — warmth slider, day or night.</h2><p>Add PDFs you’ve downloaded and read them in-app. Slide from the file’s natural colors to a warm daytime tone, or flip on Dark — the slider fine-tunes brightness there too. Stored privately in this browser.</p></div>
       <label class="btn-primary import-btn">${state.importing ? 'Adding…' : `${ICON.upload} Add PDF`}<input type="file" accept="application/pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /></label></div>
     ${state.libError ? `<p class="notice">${esc(state.libError)}</p>` : ''}
     ${items.length ? `<div class="pdf-grid">${cards}</div>` : '<label class="pdf-drop" data-import-label><input type="file" accept="application/pdf" multiple data-import hidden />' + `${ICON.upload}<strong>Add your first PDF</strong><span>Drop a file here or click to browse. Books you save from search results land here too.</span></label>`}
@@ -600,10 +609,10 @@ function libraryTab() {
 
 function readerOverlay() {
   const r = state.reader; if (!r) return '';
-  const m = mode => `<button data-mode="${mode}" class="${state.readerMode === mode ? 'active' : ''}">${mode[0].toUpperCase() + mode.slice(1)}</button>`;
-  return `<div class="reader" id="pdf-reader" data-mode="${esc(state.readerMode)}">
+  return `<div class="reader" id="pdf-reader" data-dark="${state.readerDark ? '1' : '0'}" style="--pdf-filter:${readerFilter()}">
     <div class="reader-bar"><span class="reader-title">${esc(r.title)}</span>
-      <div class="reader-modes">${m('natural')}${m('day')}${m('dark')}</div>
+      <div class="reader-tone" title="${state.readerDark ? 'Dark brightness' : 'Warmth: Natural → Day'}"><span class="tone-ico">${ICON.sun}</span><input type="range" min="0" max="100" step="1" value="${state.readerTone}" data-tone aria-label="${state.readerDark ? 'Dark brightness' : 'Reading warmth'}" /><span class="tone-ico">${ICON.read}</span></div>
+      <button class="reader-dark ${state.readerDark ? 'active' : ''}" data-dark-toggle>${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}</button>
       <button class="reader-close" data-reader-close aria-label="Close reader">${ICON.x}</button></div>
     <div class="reader-pages" id="pdf-pages"><div class="reader-msg"><span class="spinner"></span> Opening…</div></div>
   </div>`;
@@ -684,7 +693,8 @@ function bind() {
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
-  document.querySelectorAll('.reader-modes button').forEach(el => el.onclick = () => setReaderMode(el.dataset.mode));
+  document.querySelector('[data-tone]')?.addEventListener('input', e => setReaderTone(e.target.value));
+  document.querySelector('[data-dark-toggle]')?.addEventListener('click', toggleReaderDark);
   const drop = document.querySelector('[data-import-label]');
   if (drop) { drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); }; drop.ondragleave = () => drop.classList.remove('over'); drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer?.files?.length) importPdfs(e.dataTransfer.files); }; }
 }
