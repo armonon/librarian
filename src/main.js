@@ -51,11 +51,97 @@ const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
 const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '' };
+const libKey = 'librarian.library.v1';
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerMode: localStorage.getItem('librarian.readerMode') || 'day', importing: false, libError: '' };
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
 function persist() { localStorage.setItem(storeKey, JSON.stringify(state.saved)); }
+function loadLibrary() { try { return JSON.parse(localStorage.getItem(libKey) || '[]'); } catch { return []; } }
+function persistLibrary() { localStorage.setItem(libKey, JSON.stringify(state.library)); }
+
+/* ---------- PDF library: blobs in IndexedDB, metadata index in localStorage ---------- */
+const PDF_DB = 'librarian.pdfs', PDF_STORE = 'pdfs';
+function idb() { return new Promise((res, rej) => { const r = indexedDB.open(PDF_DB, 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(PDF_STORE)) r.result.createObjectStore(PDF_STORE, { keyPath: 'id' }); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function pdfPut(rec) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(PDF_STORE, 'readwrite'); t.objectStore(PDF_STORE).put(rec); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function pdfGet(id) { const db = await idb(); return new Promise((res, rej) => { const rq = db.transaction(PDF_STORE, 'readonly').objectStore(PDF_STORE).get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function pdfDel(id) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(PDF_STORE, 'readwrite'); t.objectStore(PDF_STORE).delete(id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+
+let pdfjsReady;
+function loadPdfjs() {
+  if (pdfjsReady) return pdfjsReady;
+  const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174';
+  pdfjsReady = new Promise((res, rej) => { const s = document.createElement('script'); s.src = `${base}/pdf.min.js`; s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${base}/pdf.worker.min.js`; res(window.pdfjsLib); }; s.onerror = () => rej(new Error('pdfjs failed to load')); document.head.appendChild(s); });
+  return pdfjsReady;
+}
+function fmtSize(n = 0) { return n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`; }
+const uid = () => `pdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+async function importPdfs(files) {
+  const pdfs = [...files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  if (!pdfs.length) { state.libError = 'Those weren’t PDFs. Add .pdf files.'; render(); return; }
+  state.importing = true; state.libError = ''; render();
+  for (const f of pdfs) {
+    try { const id = uid(); await pdfPut({ id, blob: f }); state.library.unshift({ id, title: f.name.replace(/\.pdf$/i, ''), author: '', source: 'Imported', size: f.size, addedAt: Date.now() }); }
+    catch (e) { state.libError = 'Could not save (storage full or blocked).'; }
+  }
+  persistLibrary(); state.importing = false; render();
+}
+async function removePdf(id) { try { await pdfDel(id); } catch {} state.library = state.library.filter(x => x.id !== id); persistLibrary(); render(); }
+
+async function saveResultPdf(book) {
+  const link = (book.links || []).find(l => /\.pdf($|\?)/i.test(l.url) || /pdf/i.test(l.label));
+  if (!link) { state.selected = { ...book, _pdfMsg: 'No direct PDF link on this record.' }; render(); return; }
+  state.selected = { ...book, _pdfBusy: true }; render();
+  try {
+    const r = await fetch(link.url); if (!r.ok) throw 0;
+    const blob = await r.blob();
+    if (!/pdf/i.test(blob.type) && !/\.pdf($|\?)/i.test(link.url)) throw 0;
+    const id = uid(); await pdfPut({ id, blob });
+    state.library.unshift({ id, title: book.title || 'Untitled', author: (book.authors || [])[0] || '', source: (book.sources || [])[0] || 'Web', size: blob.size, addedAt: Date.now() });
+    persistLibrary(); state.selected = { ...book, _pdfMsg: 'Saved to your Library.' };
+  } catch { state.selected = { ...book, _pdfMsg: 'Couldn’t fetch it here (the host blocks it). Download the PDF, then add it in the Library tab.' }; }
+  render();
+}
+
+function openReader(id) { const meta = state.library.find(x => x.id === id); if (!meta) return; state.reader = { id, title: meta.title, painted: false, io: null }; render(); }
+function closeReader() { if (state.reader?.io) try { state.reader.io.disconnect(); } catch {} state.reader = null; render(); }
+function setReaderMode(mode) { state.readerMode = mode; localStorage.setItem('librarian.readerMode', mode); const el = document.querySelector('#pdf-reader'); if (el) el.dataset.mode = mode; document.querySelectorAll('.reader-modes button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode)); }
+async function paintReader() {
+  const box = document.querySelector('#pdf-pages'); if (!box || state.reader.painted) return;
+  state.reader.painted = true;
+  try {
+    const [lib, rec] = await Promise.all([loadPdfjs(), pdfGet(state.reader.id)]);
+    if (!rec?.blob || !document.querySelector('#pdf-pages')) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">File not found in storage.</p>'; return; }
+    const data = await rec.blob.arrayBuffer();
+    const pdf = await lib.getDocument({ data }).promise;
+    if (!document.querySelector('#pdf-pages')) return; // closed while loading
+    box.innerHTML = '';
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetW = Math.min(box.clientWidth - 4, 900);
+    const first = await pdf.getPage(1);
+    const unit = targetW / first.getViewport({ scale: 1 }).width;         // CSS scale to fit width
+    const approxH = Math.round(first.getViewport({ scale: unit }).height); // placeholder height
+    const rendered = new Set();
+    const renderPage = async (n, slot) => {
+      if (rendered.has(n)) return; rendered.add(n);
+      try {
+        const page = await pdf.getPage(n);
+        const cssScale = Math.min(2, unit);
+        const vp = page.getViewport({ scale: cssScale * dpr });
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdf-page'; canvas.width = vp.width; canvas.height = vp.height;
+        canvas.style.width = `${page.getViewport({ scale: cssScale }).width}px`;
+        slot.replaceChildren(canvas);
+        slot.style.minHeight = '';
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      } catch { rendered.delete(n); }
+    };
+    const io = new IntersectionObserver(ents => ents.forEach(e => { if (e.isIntersecting) { renderPage(+e.target.dataset.page, e.target); io.unobserve(e.target); } }), { root: box, rootMargin: '1000px 0px' });
+    for (let n = 1; n <= pdf.numPages; n++) { const slot = document.createElement('div'); slot.className = 'pdf-slot'; slot.dataset.page = n; slot.style.minHeight = `${approxH}px`; box.appendChild(slot); io.observe(slot); }
+    if (state.reader) state.reader.io = io;
+  } catch (e) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">Could not open this PDF.</p>'; }
+}
 function esc(v = '') { return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function uniq(a = []) { return [...new Set(a.flat().filter(Boolean).map(String))]; }
 function year(v) { return String(v || '').match(/-?\d{3,4}/)?.[0] || ''; }
@@ -89,6 +175,8 @@ const ICON = {
   trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
   book: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
   stack: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
+  upload: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8 12 3 7 8"/><path d="M12 3v12"/></svg>',
+  read: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
 };
 
 async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
@@ -418,7 +506,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('ai', 'AI Librarian')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('ai', 'AI Librarian')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
 }
 
 function hero() {
@@ -494,6 +582,33 @@ function aiTab() {
     </div></div></section>`;
 }
 
+function libraryTab() {
+  const items = state.library;
+  const cards = items.map(p => `<article class="pdf-card">
+    <button class="pdf-open" data-read="${esc(p.id)}"><span class="pdf-ico">${ICON.read}</span></button>
+    <div class="pdf-body">
+      <strong>${esc(p.title)}</strong>
+      <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
+      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
+    </div></article>`).join('');
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — Day, Natural, or Dark.</h2><p>Add PDFs you’ve downloaded and read them in-app with a color mode that suits the light. Stored privately in this browser.</p></div>
+      <label class="btn-primary import-btn">${state.importing ? 'Adding…' : `${ICON.upload} Add PDF`}<input type="file" accept="application/pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /></label></div>
+    ${state.libError ? `<p class="notice">${esc(state.libError)}</p>` : ''}
+    ${items.length ? `<div class="pdf-grid">${cards}</div>` : '<label class="pdf-drop" data-import-label><input type="file" accept="application/pdf" multiple data-import hidden />' + `${ICON.upload}<strong>Add your first PDF</strong><span>Drop a file here or click to browse. Books you save from search results land here too.</span></label>`}
+    </div></section>`;
+}
+
+function readerOverlay() {
+  const r = state.reader; if (!r) return '';
+  const m = mode => `<button data-mode="${mode}" class="${state.readerMode === mode ? 'active' : ''}">${mode[0].toUpperCase() + mode.slice(1)}</button>`;
+  return `<div class="reader" id="pdf-reader" data-mode="${esc(state.readerMode)}">
+    <div class="reader-bar"><span class="reader-title">${esc(r.title)}</span>
+      <div class="reader-modes">${m('day')}${m('natural')}${m('dark')}</div>
+      <button class="reader-close" data-reader-close aria-label="Close reader">${ICON.x}</button></div>
+    <div class="reader-pages" id="pdf-pages"><div class="reader-msg"><span class="spinner"></span> Opening…</div></div>
+  </div>`;
+}
+
 function sourcesTab() {
   const liveCount = SOURCES.filter(s => s.live).length;
   return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Live sources</p><h2>${liveCount} catalogs, federated into one search.</h2><p>Every query fans out to these in parallel, then records are merged across sources by ISBN and a fuzzy title/author fingerprint, scored for completeness, and ranked by relevance.</p></div></div>
@@ -532,7 +647,8 @@ function modal() {
         ${ids.length ? `<div class="modal-section"><h4>Identifiers</h4><div class="id-list">${ids.map(i => `<code>${esc(i)}</code>`).join('')}</div></div>` : ''}
         ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
         ${b.work ? `<div class="modal-section"><h4>Editions</h4><button class="btn-ghost" data-editions="${esc(b.work)}">${ICON.stack} Show all editions</button><div class="editions"></div></div>` : ''}
-        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button></div>
+        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${(b.links || []).some(l => /\.pdf($|\?)/i.test(l.url) || /pdf/i.test(l.label)) ? `<button class="btn-ghost" data-save-pdf>${b._pdfBusy ? 'Saving…' : `${ICON.read} Save PDF to Library`}</button>` : ''}</div>
+        ${b._pdfMsg ? `<p class="ai-note" style="margin-top:10px">${esc(b._pdfMsg)}</p>` : ''}
       </div>
     </div>
   </article></div>`;
@@ -540,12 +656,13 @@ function modal() {
 
 function activeTab() {
   if (state.tab === 'ai') return aiTab();
+  if (state.tab === 'library') return libraryTab();
   if (state.tab === 'sources') return sourcesTab();
   if (state.tab === 'profile') return profileTab();
   return searchTab();
 }
 
-function render() { app.innerHTML = `${topbar()}<main>${activeTab()}</main>${modal()}`; bind(); }
+function render() { app.innerHTML = `${topbar()}<main>${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
@@ -562,6 +679,14 @@ function bind() {
   const bd = document.querySelector('.backdrop');
   if (bd) bd.onclick = e => { if (e.target === bd || e.target.closest('.modal-close')) { state.selected = null; render(); } };
   document.querySelectorAll('[data-editions]').forEach(el => el.onclick = e => { e.stopPropagation(); loadEditions(el.dataset.editions, el); });
+  document.querySelectorAll('[data-import]').forEach(el => el.onchange = e => { const f = e.target.files; if (f && f.length) importPdfs(f); e.target.value = ''; });
+  document.querySelectorAll('[data-read]').forEach(el => el.onclick = e => { e.stopPropagation(); openReader(el.dataset.read); });
+  document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
+  document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
+  document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
+  document.querySelectorAll('.reader-modes button').forEach(el => el.onclick = () => setReaderMode(el.dataset.mode));
+  const drop = document.querySelector('[data-import-label]');
+  if (drop) { drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); }; drop.ondragleave = () => drop.classList.remove('over'); drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer?.files?.length) importPdfs(e.dataTransfer.files); }; }
 }
 
 async function loadEditions(work, btn) {
@@ -579,7 +704,7 @@ async function loadEditions(work, btn) {
   } catch { btn.disabled = false; btn.innerHTML = `${ICON.stack} Show all editions`; box.innerHTML = '<p class="notice">Could not load editions.</p>'; }
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.selected) { state.selected = null; render(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (state.reader) closeReader(); else if (state.selected) { state.selected = null; render(); } } });
 const initialQuery = new URLSearchParams(location.search).get('q');
 render();
 if (initialQuery) search(initialQuery);
