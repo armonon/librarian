@@ -52,7 +52,7 @@ const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerTone: Math.max(0, Math.min(100, +(localStorage.getItem('librarian.readerTone') ?? 0))), importing: false, libError: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerZoom: Math.max(0.5, Math.min(3, +(localStorage.getItem('librarian.readerZoom') || 1))), importing: false, libError: '' };
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
@@ -106,13 +106,17 @@ async function saveResultPdf(book) {
 
 function openReader(id) { const meta = state.library.find(x => x.id === id); if (!meta) return; state.reader = { id, title: meta.title, painted: false, io: null }; render(); }
 function closeReader() { if (state.reader?.io) try { state.reader.io.disconnect(); } catch {} state.reader = null; render(); }
-function readerFilter() {
-  const t = state.readerTone / 100;
-  if (state.readerDark) return `invert(0.88) hue-rotate(180deg) brightness(${(0.95 + t * 0.35).toFixed(3)}) contrast(0.9)`;
-  return `sepia(${(t * 0.5).toFixed(3)}) brightness(${(1 + t * 0.05).toFixed(3)}) contrast(${t > 0 ? 0.97 : 1})`;
-}
+function readerFilter() { return state.readerDark ? 'invert(0.88) hue-rotate(180deg) brightness(0.95) contrast(0.9)' : 'none'; }
 function applyReaderFilter() { const el = document.querySelector('#pdf-reader'); if (el) { el.style.setProperty('--pdf-filter', readerFilter()); el.dataset.dark = state.readerDark ? '1' : '0'; } }
-function setReaderTone(v) { state.readerTone = Math.max(0, Math.min(100, +v || 0)); localStorage.setItem('librarian.readerTone', state.readerTone); applyReaderFilter(); }
+const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+function setZoom(dir) {
+  const i = ZOOMS.reduce((best, z, k) => Math.abs(z - state.readerZoom) < Math.abs(ZOOMS[best] - state.readerZoom) ? k : best, 0);
+  const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + dir))];
+  if (next === state.readerZoom) return;
+  state.readerZoom = next; localStorage.setItem('librarian.readerZoom', next);
+  const out = document.querySelector('.zoom-val'); if (out) out.textContent = `${Math.round(next * 100)}%`;
+  layoutPages();
+}
 function toggleReaderDark() { state.readerDark = !state.readerDark; localStorage.setItem('librarian.readerDark', state.readerDark ? '1' : '0'); const btn = document.querySelector('[data-dark-toggle]'); if (btn) { btn.classList.toggle('active', state.readerDark); btn.innerHTML = `${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}`; } applyReaderFilter(); }
 async function paintReader() {
   const box = document.querySelector('#pdf-pages'); if (!box || state.reader.painted) return;
@@ -122,32 +126,41 @@ async function paintReader() {
     if (!rec?.blob || !document.querySelector('#pdf-pages')) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">File not found in storage.</p>'; return; }
     const data = await rec.blob.arrayBuffer();
     const pdf = await lib.getDocument({ data }).promise;
-    if (!document.querySelector('#pdf-pages')) return; // closed while loading
-    box.innerHTML = '';
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const targetW = Math.min(box.clientWidth - 4, 900);
-    const first = await pdf.getPage(1);
-    const unit = targetW / first.getViewport({ scale: 1 }).width;         // CSS scale to fit width
-    const approxH = Math.round(first.getViewport({ scale: unit }).height); // placeholder height
-    const rendered = new Set();
-    const renderPage = async (n, slot) => {
-      if (rendered.has(n)) return; rendered.add(n);
-      try {
-        const page = await pdf.getPage(n);
-        const cssScale = Math.min(2, unit);
-        const vp = page.getViewport({ scale: cssScale * dpr });
-        const canvas = document.createElement('canvas');
-        canvas.className = 'pdf-page'; canvas.width = vp.width; canvas.height = vp.height;
-        canvas.style.width = `${page.getViewport({ scale: cssScale }).width}px`;
-        slot.replaceChildren(canvas);
-        slot.style.minHeight = '';
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-      } catch { rendered.delete(n); }
-    };
-    const io = new IntersectionObserver(ents => ents.forEach(e => { if (e.isIntersecting) { renderPage(+e.target.dataset.page, e.target); io.unobserve(e.target); } }), { root: box, rootMargin: '1000px 0px' });
-    for (let n = 1; n <= pdf.numPages; n++) { const slot = document.createElement('div'); slot.className = 'pdf-slot'; slot.dataset.page = n; slot.style.minHeight = `${approxH}px`; box.appendChild(slot); io.observe(slot); }
-    if (state.reader) state.reader.io = io;
+    if (!document.querySelector('#pdf-pages') || !state.reader) return; // closed while loading
+    state.reader.pdf = pdf;
+    await layoutPages();
   } catch (e) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">Could not open this PDF.</p>'; }
+}
+
+// Builds the page slots at the current zoom. Re-run on zoom change (no re-parse).
+async function layoutPages() {
+  const box = document.querySelector('#pdf-pages'), pdf = state.reader?.pdf;
+  if (!box || !pdf) return;
+  if (state.reader.io) { try { state.reader.io.disconnect(); } catch {} }
+  const prevRatio = box.scrollHeight > 0 ? box.scrollTop / box.scrollHeight : 0;
+  box.innerHTML = '';
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const avail = Math.min(box.clientWidth - 8, 900);
+  const first = await pdf.getPage(1);
+  const unit = (avail / first.getViewport({ scale: 1 }).width) * state.readerZoom; // CSS scale incl. zoom
+  const approxH = Math.round(first.getViewport({ scale: unit }).height);
+  const rendered = new Set();
+  const renderPage = async (n, slot) => {
+    if (rendered.has(n)) return; rendered.add(n);
+    try {
+      const page = await pdf.getPage(n);
+      const vp = page.getViewport({ scale: Math.min(unit * dpr, 5) }); // cap render resolution
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-page'; canvas.width = vp.width; canvas.height = vp.height;
+      canvas.style.width = `${page.getViewport({ scale: unit }).width}px`;
+      slot.replaceChildren(canvas); slot.style.minHeight = '';
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    } catch { rendered.delete(n); }
+  };
+  const io = new IntersectionObserver(ents => ents.forEach(e => { if (e.isIntersecting) { renderPage(+e.target.dataset.page, e.target); io.unobserve(e.target); } }), { root: box, rootMargin: '1000px 0px' });
+  for (let n = 1; n <= pdf.numPages; n++) { const slot = document.createElement('div'); slot.className = 'pdf-slot'; slot.dataset.page = n; slot.style.minHeight = `${approxH}px`; box.appendChild(slot); io.observe(slot); }
+  state.reader.io = io;
+  if (prevRatio > 0) box.scrollTop = prevRatio * box.scrollHeight; // keep roughly the same place
 }
 function esc(v = '') { return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function uniq(a = []) { return [...new Set(a.flat().filter(Boolean).map(String))]; }
@@ -611,7 +624,7 @@ function readerOverlay() {
   const r = state.reader; if (!r) return '';
   return `<div class="reader" id="pdf-reader" data-dark="${state.readerDark ? '1' : '0'}" style="--pdf-filter:${readerFilter()}">
     <div class="reader-bar"><span class="reader-title">${esc(r.title)}</span>
-      <div class="reader-tone" title="${state.readerDark ? 'Dark brightness' : 'Warmth: Natural → Day'}"><span class="tone-ico">${ICON.sun}</span><input type="range" min="0" max="100" step="1" value="${state.readerTone}" data-tone aria-label="${state.readerDark ? 'Dark brightness' : 'Reading warmth'}" /><span class="tone-ico">${ICON.read}</span></div>
+      <div class="reader-zoom"><button data-zoom="-1" aria-label="Zoom out">&minus;</button><span class="zoom-val">${Math.round(state.readerZoom * 100)}%</span><button data-zoom="1" aria-label="Zoom in">+</button></div>
       <button class="reader-dark ${state.readerDark ? 'active' : ''}" data-dark-toggle>${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}</button>
       <button class="reader-close" data-reader-close aria-label="Close reader">${ICON.x}</button></div>
     <div class="reader-pages" id="pdf-pages"><div class="reader-msg"><span class="spinner"></span> Opening…</div></div>
@@ -693,7 +706,7 @@ function bind() {
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
-  document.querySelector('[data-tone]')?.addEventListener('input', e => setReaderTone(e.target.value));
+  document.querySelectorAll('[data-zoom]').forEach(el => el.onclick = () => setZoom(+el.dataset.zoom));
   document.querySelector('[data-dark-toggle]')?.addEventListener('click', toggleReaderDark);
   const drop = document.querySelector('[data-import-label]');
   if (drop) { drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); }; drop.ondragleave = () => drop.classList.remove('over'); drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer?.files?.length) importPdfs(e.dataTransfer.files); }; }
