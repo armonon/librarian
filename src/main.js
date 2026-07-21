@@ -52,7 +52,8 @@ const PROXY = '/.netlify/functions/proxy';
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerZoom: Math.max(0.5, Math.min(3, +(localStorage.getItem('librarian.readerZoom') || 1))), importing: false, libError: '' };
+const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerZoom: Math.max(0.5, Math.min(3, +(localStorage.getItem('librarian.readerZoom') || 1))), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
+function loadOffSources() { try { return JSON.parse(localStorage.getItem('librarian.offSources') || '[]'); } catch { return []; } }
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
@@ -380,6 +381,38 @@ async function norway(q) {
   });
 }
 
+// Registry of live sources. Keys match SOURCES[].name so the Sources tab can
+// toggle them and show what each contributed to the last search.
+const FETCHERS = {
+  'Open Library': { fn: openLibrary, tier: 'fast' },
+  'Google Books': { fn: googleBooks, tier: 'fast' },
+  'Project Gutenberg / Gutendex': { fn: gutenberg, tier: 'fast' },
+  'OpenAlex': { fn: openAlex, tier: 'fast' },
+  'Crossref': { fn: crossref, tier: 'fast' },
+  'Internet Archive': { fn: internetArchive, tier: 'fast' },
+  'CORE': { fn: core, tier: 'slow' },
+  'DPLA': { fn: dpla, tier: 'slow' },
+  'Europeana': { fn: europeana, tier: 'slow' },
+  'K10plus': { fn: k10plus, tier: 'slow' },
+  'Library of Congress': { fn: loc, tier: 'slow' },
+  'BnF': { fn: bnf, tier: 'slow' },
+  'DNB': { fn: dnb, tier: 'slow' },
+  'Finna': { fn: finna, tier: 'slow' },
+  'Nasjonalbiblioteket': { fn: norway, tier: 'slow' },
+};
+function sourceOn(name) { return !state.offSources.includes(name); }
+function toggleSource(name) {
+  state.offSources = sourceOn(name) ? [...state.offSources, name] : state.offSources.filter(n => n !== name);
+  localStorage.setItem('librarian.offSources', JSON.stringify(state.offSources));
+  render();
+}
+// Runs one tier, recording per-source result counts (-1 = failed) for the Sources tab.
+function runTier(tier, q) {
+  return Object.entries(FETCHERS).filter(([n, v]) => v.tier === tier && sourceOn(n)).map(([n, v]) =>
+    v.fn(q).then(r => { state.sourceStats[n] = (r || []).length; return r || []; })
+      .catch(() => { state.sourceStats[n] = -1; return []; }));
+}
+
 function tokenize(q) { return String(q || '').replace(/^isbn:/i, '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 2); }
 function relevance(book, toks) {
   if (!toks.length) return 0;
@@ -449,8 +482,9 @@ async function search(q) {
   try { history.replaceState(null, '', `${location.pathname}?q=${encodeURIComponent(q)}`); } catch {}
   render();
   const settle = async arr => (await Promise.allSettled(arr)).flatMap(r => r.status === 'fulfilled' ? r.value : []);
+  state.sourceStats = {};
   // Phase 1: fast keyless sources — show results quickly.
-  const fast = await settle([openLibrary(q), googleBooks(q), gutenberg(q), openAlex(q), crossref(q), internetArchive(q)]);
+  const fast = await settle(runTier('fast', q));
   if (token !== searchToken) return; // a newer search superseded this one
   state.results = merge(fast, q);
   state.loading = false;
@@ -458,7 +492,7 @@ async function search(q) {
   if (state.tab === 'search') render();
   document.querySelector('#results')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   // Phase 2: slower proxied / national catalogs — fill in.
-  const slow = await settle([dpla(q), europeana(q), core(q), k10plus(q), loc(q), bnf(q), dnb(q), finna(q), norway(q)]);
+  const slow = await settle(runTier('slow', q));
   if (token !== searchToken) return;
   state.results = merge(fast.concat(slow), q);
   state.loadingMore = false;
@@ -632,9 +666,24 @@ function readerOverlay() {
 }
 
 function sourcesTab() {
-  const liveCount = SOURCES.filter(s => s.live).length;
-  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Live sources</p><h2>${liveCount} catalogs, federated into one search.</h2><p>Every query fans out to these in parallel, then records are merged across sources by ISBN and a fuzzy title/author fingerprint, scored for completeness, and ranked by relevance.</p></div></div>
-    <div class="sources">${SOURCES.map(s => `<article><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? '<span class="live-pill">live</span>' : '<span class="priority">roadmap</span>'}</div><h3>${esc(s.name)}</h3><p class="muted" style="color:var(--clay);font-size:0.78rem;font-weight:600;margin:0 0 8px">${esc(s.priority)}</p><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
+  const live = SOURCES.filter(s => s.live);
+  const onCount = live.filter(s => sourceOn(s.name)).length;
+  const stats = state.sourceStats, ran = Object.keys(stats).length;
+  const contributed = Object.values(stats).filter(v => v > 0).length;
+  const summary = ran
+    ? `Last search${state.query ? ` for “${esc(state.query)}”` : ''}: <strong>${contributed}</strong> of ${ran} searched catalogs returned records. Toggle any off to skip it next time.`
+    : 'Run a search and this becomes a live report of exactly what each catalog contributed. Toggle any off to skip it.';
+  const statOf = s => {
+    const v = stats[s.name];
+    if (!sourceOn(s.name)) return '<span class="src-stat off">off</span>';
+    if (v === undefined) return '';
+    if (v === -1) return '<span class="src-stat fail">no response</span>';
+    if (v === 0) return '<span class="src-stat zero">0 records</span>';
+    return `<span class="src-stat hit">${v} records</span>`;
+  };
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Source control</p><h2>${onCount} of ${live.length} catalogs enabled.</h2><p>${summary}</p></div>
+      <div class="src-bulk"><button data-src-all="on">Enable all</button><button data-src-all="fast">Fast only</button></div></div>
+    <div class="sources">${SOURCES.map(s => `<article class="${s.live && !sourceOn(s.name) ? 'is-off' : ''}"><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? `<label class="src-toggle" title="${sourceOn(s.name) ? 'Searching this catalog' : 'Skipping this catalog'}"><input type="checkbox" data-src="${esc(s.name)}" ${sourceOn(s.name) ? 'checked' : ''} /><span class="switch"></span></label>` : '<span class="priority">roadmap</span>'}</div><h3>${esc(s.name)}</h3><div class="src-line"><span class="src-role">${esc(s.priority)}</span>${s.live ? statOf(s) : ''}</div><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
     <div class="section-head blueprint" style="margin-top:48px"><div class="titles"><p class="eyebrow">Next-level architecture</p><h2>How this becomes the greatest organized index.</h2></div></div>
     <div class="steps">${BLUEPRINT.map(([h, p], i) => `<article><span class="n">${i + 1}</span><b>${esc(h)}</b><p>${esc(p)}</p></article>`).join('')}</div></div></section>`;
 }
@@ -707,6 +756,11 @@ function bind() {
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
   document.querySelectorAll('[data-zoom]').forEach(el => el.onclick = () => setZoom(+el.dataset.zoom));
+  document.querySelectorAll('[data-src]').forEach(el => el.onchange = () => toggleSource(el.dataset.src));
+  document.querySelectorAll('[data-src-all]').forEach(el => el.onclick = () => {
+    state.offSources = el.dataset.srcAll === 'fast' ? Object.entries(FETCHERS).filter(([, v]) => v.tier === 'slow').map(([n]) => n) : [];
+    localStorage.setItem('librarian.offSources', JSON.stringify(state.offSources)); render();
+  });
   document.querySelector('[data-dark-toggle]')?.addEventListener('click', toggleReaderDark);
   const drop = document.querySelector('[data-import-label]');
   if (drop) { drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); }; drop.ondragleave = () => drop.classList.remove('over'); drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer?.files?.length) importPdfs(e.dataTransfer.files); }; }
