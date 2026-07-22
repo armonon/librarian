@@ -233,6 +233,15 @@ a { color: inherit; }
   .features, .sources, .steps, .books, .shelf { grid-template-columns: 1fr; }
   .modal { padding: 20px; }
   .modal-grid { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; }
+  /* nav: stack the brand above a full-width scrollable tab row so 5 tabs fit */
+  .topbar .wrap { flex-direction: column; align-items: stretch; gap: 6px; padding-top: 10px; padding-bottom: 8px; min-height: 0; }
+  .brand { gap: 6px; }
+  .brand .mark { font-size: 1.15rem; }
+  .nav { gap: 2px; margin: 0 -14px; padding: 0 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav button { padding: 8px 10px; font-size: 0.86rem; }
+  .zoom-val { min-width: 40px; }
+  .reader-zoom button { width: 34px; height: 34px; }
 }
 
 /* ---------- PDF library ---------- */
