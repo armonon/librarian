@@ -562,7 +562,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('ai', 'AI Librarian')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
 }
 
 function hero() {
@@ -684,8 +684,18 @@ function sourcesTab() {
   return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Source control</p><h2>${onCount} of ${live.length} catalogs enabled.</h2><p>${summary}</p></div>
       <div class="src-bulk"><button data-src-all="on">Enable all</button><button data-src-all="fast">Fast only</button></div></div>
     <div class="sources">${SOURCES.map(s => `<article class="${s.live && !sourceOn(s.name) ? 'is-off' : ''}"><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? `<label class="src-toggle" title="${sourceOn(s.name) ? 'Searching this catalog' : 'Skipping this catalog'}"><input type="checkbox" data-src="${esc(s.name)}" ${sourceOn(s.name) ? 'checked' : ''} /><span class="switch"></span></label>` : '<span class="priority">roadmap</span>'}</div><h3>${esc(s.name)}</h3><div class="src-line"><span class="src-role">${esc(s.priority)}</span>${s.live ? statOf(s) : ''}</div><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
-    <div class="section-head blueprint" style="margin-top:48px"><div class="titles"><p class="eyebrow">Next-level architecture</p><h2>How this becomes the greatest organized index.</h2></div></div>
-    <div class="steps">${BLUEPRINT.map(([h, p], i) => `<article><span class="n">${i + 1}</span><b>${esc(h)}</b><p>${esc(p)}</p></article>`).join('')}</div></div></section>`;
+    <div class="suggest-box" style="margin-top:44px">
+      <div class="titles"><p class="eyebrow">Missing something?</p><h2>Suggest a source.</h2><p>Know an open catalog, national library, or book API Librarian should federate? Name it (and a link if you have one) and it goes straight to the project’s issue tracker.</p></div>
+      <form class="suggest-form" data-suggest-form>
+        <input name="src" placeholder="Source name or API URL — e.g. Trove (Australia), or api.example.org" autocomplete="off" required />
+        <button class="btn-primary">Suggest ${ICON.ext}</button>
+      </form>
+    </div></div></section>`;
+}
+function submitSuggestion(text) {
+  text = String(text || '').trim(); if (!text) return;
+  const url = `https://github.com/armonon/librarian/issues/new?title=${encodeURIComponent('Source suggestion: ' + text.slice(0, 80))}&body=${encodeURIComponent('Suggested source: ' + text + '\n\n(Submitted from the Sources tab.)')}&labels=source-suggestion`;
+  window.open(url, '_blank', 'noopener');
 }
 
 function profileTab() {
@@ -726,7 +736,7 @@ function modal() {
 }
 
 function activeTab() {
-  if (state.tab === 'ai') return aiTab();
+  // AI Librarian temporarily hidden — keep aiTab() defined for easy re-enable.
   if (state.tab === 'library') return libraryTab();
   if (state.tab === 'sources') return sourcesTab();
   if (state.tab === 'profile') return profileTab();
@@ -757,6 +767,7 @@ function bind() {
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
   document.querySelectorAll('[data-zoom]').forEach(el => el.onclick = () => setZoom(+el.dataset.zoom));
   document.querySelectorAll('[data-src]').forEach(el => el.onchange = () => toggleSource(el.dataset.src));
+  document.querySelector('[data-suggest-form]')?.addEventListener('submit', e => { e.preventDefault(); submitSuggestion(new FormData(e.currentTarget).get('src')); e.currentTarget.reset(); });
   document.querySelectorAll('[data-src-all]').forEach(el => el.onclick = () => {
     state.offSources = el.dataset.srcAll === 'fast' ? Object.entries(FETCHERS).filter(([, v]) => v.tier === 'slow').map(([n]) => n) : [];
     localStorage.setItem('librarian.offSources', JSON.stringify(state.offSources)); render();

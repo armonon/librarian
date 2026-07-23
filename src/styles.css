@@ -314,3 +314,12 @@ a { color: inherit; }
 .src-stat.zero { color: var(--faint); background: var(--surface-2); }
 .src-stat.fail { color: var(--amber); background: var(--amber-soft); }
 .src-stat.off { color: var(--faint); background: var(--surface-2); }
+
+/* ---------- Suggest a source ---------- */
+.suggest-box { border: 1px solid var(--line); background: var(--surface); border-radius: 16px; padding: 26px; }
+.suggest-box .titles { max-width: 60ch; margin-bottom: 18px; }
+.suggest-form { display: flex; gap: 10px; max-width: 620px; }
+.suggest-form input { flex: 1; min-width: 0; background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 12px; color: var(--text); padding: 13px 15px; font-size: 0.96rem; outline: 0; }
+.suggest-form input:focus { border-color: var(--clay); }
+.suggest-form .btn-primary { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 20px; }
+@media (max-width: 620px) { .suggest-form { flex-direction: column; } .suggest-box { padding: 20px; } }
