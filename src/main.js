@@ -48,7 +48,11 @@ const PAGE_SIZE = 24;
 // Polite-pool contact sent to OpenAlex/Crossref for higher, friendlier rate limits. Change to your email.
 const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
 // Server-side proxy for keyed / no-CORS sources (DPLA, Europeana, CORE). Keys live in Netlify env vars.
-const PROXY = '/.netlify/functions/proxy';
+// In the native (Capacitor) app the UI loads from a local origin, so serverless
+// function calls must be absolute; on the web they stay same-origin (relative).
+const NATIVE = location.protocol === 'capacitor:' || location.protocol === 'file:' || !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const FN_BASE = NATIVE ? 'https://librarian-atlas.netlify.app' : '';
+const PROXY = `${FN_BASE}/.netlify/functions/proxy`;
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
@@ -550,7 +554,7 @@ async function askLibrarian(text) {
   const books = state.results.slice(0, 80).map(b => ({ title: b.title, authors: (b.authors || []).join(', '), year: b.year, category: category(b), availability: b.availability }));
   const shelf = state.saved.slice(0, 20).map(b => ({ title: b.title, authors: (b.authors || []).join(', ') }));
   try {
-    const r = await fetch('/.netlify/functions/librarian', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: state.ask, query: state.query, books, shelf }) });
+    const r = await fetch(`${FN_BASE}/.netlify/functions/librarian`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: state.ask, query: state.query, books, shelf }) });
     const data = await r.json();
     state.reply = data.text || '';
     state.replyModel = data.model || '';
