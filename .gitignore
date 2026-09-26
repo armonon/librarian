@@ -7,3 +7,6 @@ dist
 
 # Local server-side API keys bundled into Netlify functions (never commit)
 netlify/functions/_keys.mjs
+
+# Electron mac build output
+dist-mac
