@@ -111,3 +111,22 @@ export async function pdfLibrary(legacy = []) {
     } finally { database.close(); }
   });
 }
+
+// Read and merge in one transaction so concurrent progress and bookmark writes
+// cannot overwrite each other or resurrect a removed book.
+export async function pdfUpdate(id, changes) {
+  let updated;
+  await libraryTransaction(transaction => {
+    const index = transaction.objectStore(INDEX);
+    const request = index.get(id);
+    request.onsuccess = () => {
+      if (!request.result || id === '__legacy_migrated__') return;
+      const { id: ignoredId, ...patch } = changes;
+      updated = { ...request.result, ...patch, id };
+      index.put(updated);
+    };
+    return request;
+  });
+  if (!updated) throw new Error('This book is no longer in your library.');
+  return updated;
+}

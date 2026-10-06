@@ -9,7 +9,7 @@ test('failed PDF import clears busy state, reports failure and never advertises 
   const end = source.indexOf('async function removePdf(', start);
   const state = { library: [], importing: false, libError: '' };
   const context = vm.createContext({ state, uid: () => 'one', render: () => {}, libraryReady: Promise.resolve(),
-    pdfSave: async () => { throw new DOMException('Full', 'QuotaExceededError'); } });
+    validatePdf: async () => {}, pdfSave: async () => { throw new DOMException('Full', 'QuotaExceededError'); } });
   vm.runInContext(source.slice(start, end), context);
   await context.importPdfs([{ name: 'original.pdf', type: 'application/pdf', size: 10 }]);
   assert.equal(state.importing, false);

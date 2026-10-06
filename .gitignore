@@ -10,3 +10,8 @@ netlify/functions/_keys.mjs
 
 # Electron mac build output
 dist-mac
+public/pdfjs/
+
+# Browser verification output
+test-results/
+playwright-report/

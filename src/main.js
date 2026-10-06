@@ -1,6 +1,9 @@
 import './styles.css';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { nativeExport } from './native-export.js';
+import { libraryItems, readableLink, readingPage, validatePdf, textPages } from './reading.js';
 import { loadPdfjs, pdfOptions } from './pdf-reader.js';
-import { pdfSave, pdfLibrary, pdfGet, pdfDel } from './pdf-storage.js';
+import { pdfSave, pdfLibrary, pdfGet, pdfDel, pdfUpdate } from './pdf-storage.js';
 import { pdfDownload } from './pdf-download.js';
 
 const SOURCES = [
@@ -59,7 +62,7 @@ const PROXY = `${FN_BASE}/.netlify/functions/proxy`;
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'search', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerZoom: Math.max(0.5, Math.min(3, +(localStorage.getItem('librarian.readerZoom') || 1))), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
+const state = { tab: 'library', libraryQuery: '', libraryFilter: 'all', librarySort: 'recent', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerZoom: Math.max(0.5, Math.min(3, +(localStorage.getItem('librarian.readerZoom') || 1))), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
 function loadOffSources() { try { return JSON.parse(localStorage.getItem('librarian.offSources') || '[]'); } catch { return []; } }
 let searchToken = 0;
 
@@ -97,6 +100,7 @@ async function importPdfs(files) {
     for (const f of pdfs) {
       try {
         const metadata = { id: uid(), title: f.name.replace(/\.pdf$/i, ''), author: '', source: 'Imported', size: f.size, addedAt: Date.now() };
+        await validatePdf(f);
         await pdfSave(metadata, f);
         state.library.unshift(metadata);
       } catch { state.libError = 'Some PDFs could not be saved (storage full or blocked). Keep the originals and try again.'; }
@@ -114,7 +118,9 @@ async function downloadPdf(id) {
   const meta = state.library.find(item => item.id === id);
   if (!meta) return;
   try {
-    const result = pdfDownload(await pdfGet(id), meta.title);
+    const record = await pdfGet(id);
+    const result = meta.format === 'text' ? { blob: record.blob, name: `${meta.title}.txt` } : pdfDownload(record, meta.title);
+    if (await nativeExport(result.blob, result.name)) return;
     const url = URL.createObjectURL(result.blob);
     if (readyPdfDownload) URL.revokeObjectURL(readyPdfDownload.url);
     readyPdfDownload = { url, name: result.name };
@@ -123,28 +129,125 @@ async function downloadPdf(id) {
   } catch (error) { state.libError = error.message || 'Could not prepare the PDF download.'; render(); }
 }
 
-async function saveResultPdf(book) {
-  const link = (book.links || []).find(l => /\.pdf($|\?)/i.test(l.url) || /pdf/i.test(l.label));
-  if (!link) { state.selected = { ...book, _pdfMsg: 'No direct PDF link on this record.' }; render(); return; }
+const savingBooks = new Set();
+async function saveResultPdf(book, read = false) {
+  const bookKey = key(book);
+  if (savingBooks.has(bookKey)) return;
+  const existing = state.library.find(item => item.bookKey === bookKey);
+  if (existing) { if (read) openReader(existing.id); else { state.selected = { ...book, _pdfMsg: 'Already in your Library.' }; render(); } return; }
+  const link = readableLink(book);
+  if (!link) return;
+  savingBooks.add(bookKey);
   state.selected = { ...book, _pdfBusy: true }; render();
   try {
-    const r = await fetch(link.url); if (!r.ok) throw 0;
-    const blob = await r.blob();
-    if (!/pdf/i.test(blob.type) && !/\.pdf($|\?)/i.test(link.url)) throw 0;
+    let blob;
+    if (link.format === 'text') {
+      let text;
+      if (Capacitor.isNativePlatform()) {
+        const response = await CapacitorHttp.get({ url: `https://www.gutenberg.org/cache/epub/${link.gutenbergId}/pg${link.gutenbergId}.txt`, responseType: 'text', readTimeout: 20000, connectTimeout: 15000 });
+        if (response.status !== 200) throw new Error('This edition is unavailable.');
+        text = response.data;
+      } else {
+        const response = await fetch(`${FN_BASE}/.netlify/functions/book-text?id=${link.gutenbergId}`, { signal: AbortSignal.timeout(20000) });
+        if (!response.ok) throw new Error('This edition is unavailable.');
+        text = await response.text();
+      }
+      if (typeof text !== 'string' || !/Project Gutenberg/i.test(text) || /<html/i.test(text.slice(0, 500))) throw new Error('The source did not return a readable book.');
+      blob = new Blob([text], { type: 'text/plain' });
+    } else {
+      const response = await fetch(link.url, { signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw new Error('Could not download this PDF.');
+      blob = await response.blob();
+      await validatePdf(blob);
+    }
     await libraryReady;
-    const metadata = { id: uid(), title: book.title || 'Untitled', author: (book.authors || [])[0] || '', source: (book.sources || [])[0] || 'Web', size: blob.size, addedAt: Date.now() };
+    const metadata = { id: uid(), bookKey, format: link.format, title: book.title || 'Untitled', author: (book.authors || [])[0] || '', cover: book.cover || '', source: (book.sources || [])[0] || 'Web', sourceUrl: link.url, size: blob.size, addedAt: Date.now() };
     await pdfSave(metadata, blob);
     state.library.unshift(metadata);
-    state.selected = { ...book, _pdfMsg: 'Saved to your Library.' };
-  } catch { state.selected = { ...book, _pdfMsg: 'Could not fetch or save this PDF. Check available storage, or download the original and add it in Library.' }; }
+    if (state.selected && key(state.selected) === bookKey) state.selected = { ...book, _pdfMsg: 'Saved for offline reading.' };
+    if (read) { openReader(metadata.id); return; }
+  } catch (error) {
+    if (state.selected && key(state.selected) === bookKey) state.selected = { ...book, _pdfMsg: `${error.message || 'Could not save this book.'} You can also open the source, download a PDF, and import it into Library.` };
+  } finally { savingBooks.delete(bookKey); }
   render();
 }
 
-function openReader(id) { const meta = state.library.find(x => x.id === id); if (!meta) return; state.reader = { id, title: meta.title, painted: false, io: null }; render(); }
+async function updateBook(id, changes) {
+  try {
+    const updated = await pdfUpdate(id, changes);
+    state.library = state.library.map(item => item.id === id ? updated : item);
+    return updated;
+  } catch (error) {
+    state.libError = 'Could not save your reading changes. Check available storage and try again.';
+    const notice = document.querySelector('[data-reader-status]');
+    if (notice) notice.textContent = state.libError;
+    return null;
+  }
+}
+function openReader(id) {
+  const meta = state.library.find(x => x.id === id); if (!meta) return;
+  state.selected = null;
+  state.reader = { id, title: meta.title, format: meta.format || 'pdf', page: readingPage(meta.page, meta.totalPages), painted: false, io: null, layout: 0 };
+  document.body.classList.add('reading');
+  render();
+  document.querySelector('[data-reader-close]')?.focus();
+}
 function closeReader() {
-  if (state.reader?.io) try { state.reader.io.disconnect(); } catch {}
-  if (state.reader?.loadingTask) void state.reader.loadingTask.destroy().catch(() => {});
-  state.reader = null; render();
+  const reader = state.reader;
+  if (reader?.io) reader.io.disconnect();
+  reader?.resizeObserver?.disconnect();
+  if (reader?.loadingTask) void reader.loadingTask.destroy().catch(() => {});
+  state.reader = null;
+  document.body.classList.remove('reading');
+  render();
+  document.querySelector(`[data-read="${reader?.id}"]`)?.focus();
+}
+function readerMeta() { return state.library.find(item => item.id === state.reader?.id); }
+function updateReaderControls() {
+  const r = state.reader; if (!r) return;
+  const total = r.pdf?.numPages || r.text?.length || 0;
+  const input = document.querySelector('[data-page-number]');
+  if (input && document.activeElement !== input) input.value = r.page;
+  if (input) input.max = total || 1;
+  const count = document.querySelector('[data-page-count]'); if (count) count.textContent = total ? `/ ${total}` : '/ …';
+  const bookmark = document.querySelector('[data-bookmark-page]');
+  const marked = (readerMeta()?.bookmarks || []).includes(r.page);
+  if (bookmark) { bookmark.setAttribute('aria-pressed', String(marked)); bookmark.textContent = marked ? 'Bookmarked' : 'Bookmark'; }
+  const picker = document.querySelector('[data-bookmark-jump]');
+  if (picker) picker.innerHTML = '<option value="">Bookmarks</option>' + (readerMeta()?.bookmarks || []).map(page => `<option value="${page}">Page ${page}</option>`).join('');
+  const previous = document.querySelector('[data-page-step="-1"]'); if (previous) previous.disabled = r.page <= 1;
+  const next = document.querySelector('[data-page-step="1"]'); if (next) next.disabled = !total || r.page >= total;
+}
+function recordPage(page) {
+  const r = state.reader; if (!r) return;
+  const total = r.pdf?.numPages || r.text?.length;
+  r.page = readingPage(page, total);
+  updateReaderControls();
+  void updateBook(r.id, { page: r.page, totalPages: total, lastReadAt: Date.now() });
+}
+function goToPage(page) {
+  const r = state.reader; if (!r) return;
+  r.page = readingPage(page, r.pdf?.numPages || r.text?.length);
+  if (r.text) paintTextPage();
+  else {
+    const box = document.querySelector('#pdf-pages');
+    const slot = box?.querySelector(`[data-page="${r.page}"]`);
+    if (slot) box.scrollTop += slot.getBoundingClientRect().top - box.getBoundingClientRect().top - 10;
+  }
+  recordPage(r.page);
+}
+async function bookmarkPage() {
+  const r = state.reader; if (!r) return;
+  const pages = readerMeta()?.bookmarks || [];
+  const next = pages.includes(r.page) ? pages.filter(page => page !== r.page) : [...pages, r.page].sort((a, b) => a - b);
+  await updateBook(r.id, { bookmarks: next });
+  if (state.reader === r) updateReaderControls();
+}
+function paintTextPage() {
+  const r = state.reader, box = document.querySelector('#pdf-pages');
+  if (!r?.text || !box) return;
+  box.innerHTML = `<article class="text-page" style="font-size:${Math.round(18 * state.readerZoom)}px"><pre>${esc(r.text[r.page - 1])}</pre></article>`;
+  box.scrollTop = 0;
 }
 function readerFilter() { return state.readerDark ? 'invert(0.88) hue-rotate(180deg) brightness(0.95) contrast(0.9)' : 'none'; }
 function applyReaderFilter() { const el = document.querySelector('#pdf-reader'); if (el) { el.style.setProperty('--pdf-filter', readerFilter()); el.dataset.dark = state.readerDark ? '1' : '0'; } }
@@ -155,7 +258,7 @@ function setZoom(dir) {
   if (next === state.readerZoom) return;
   state.readerZoom = next; localStorage.setItem('librarian.readerZoom', next);
   const out = document.querySelector('.zoom-val'); if (out) out.textContent = `${Math.round(next * 100)}%`;
-  layoutPages();
+  if (state.reader?.text) paintTextPage(); else void layoutPages();
 }
 function toggleReaderDark() { state.readerDark = !state.readerDark; localStorage.setItem('librarian.readerDark', state.readerDark ? '1' : '0'); const btn = document.querySelector('[data-dark-toggle]'); if (btn) { btn.classList.toggle('active', state.readerDark); btn.innerHTML = `${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}`; } applyReaderFilter(); }
 async function paintReader() {
@@ -163,9 +266,16 @@ async function paintReader() {
   const reader = state.reader;
   reader.painted = true;
   try {
-    const [lib, rec] = await Promise.all([loadPdfjs(), pdfGet(reader.id)]);
+    const rec = await pdfGet(reader.id);
     if (state.reader !== reader) return;
     if (!rec?.blob || !document.querySelector('#pdf-pages')) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">File not found in storage.</p>'; return; }
+    if (reader.format === 'text') {
+      reader.text = textPages(await rec.blob.text());
+      if (state.reader !== reader) return;
+      reader.page = readingPage(reader.page, reader.text.length);
+      paintTextPage(); recordPage(reader.page); return;
+    }
+    const lib = await loadPdfjs();
     const data = await rec.blob.arrayBuffer();
     if (state.reader !== reader) return;
     reader.loadingTask = lib.getDocument(pdfOptions(data));
@@ -173,38 +283,72 @@ async function paintReader() {
     if (state.reader !== reader) { await pdf.destroy(); return; }
     reader.pdf = pdf;
     await layoutPages();
+    if (state.reader !== reader) return;
+    let width = box.clientWidth;
+    reader.resizeObserver = new ResizeObserver(() => {
+      if (Math.abs(box.clientWidth - width) < 2) return;
+      width = box.clientWidth; void layoutPages();
+    });
+    reader.resizeObserver.observe(box);
   } catch (e) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">Could not open this PDF.</p>'; }
 }
 
 // Builds the page slots at the current zoom. Re-run on zoom change (no re-parse).
 async function layoutPages() {
-  const box = document.querySelector('#pdf-pages'), pdf = state.reader?.pdf;
+  const reader = state.reader, box = document.querySelector('#pdf-pages'), pdf = reader?.pdf;
   if (!box || !pdf) return;
-  if (state.reader.io) { try { state.reader.io.disconnect(); } catch {} }
-  const prevRatio = box.scrollHeight > 0 ? box.scrollTop / box.scrollHeight : 0;
-  box.innerHTML = '';
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const avail = Math.min(box.clientWidth - 8, 900);
+  const generation = ++reader.layout;
+  reader.io?.disconnect();
   const first = await pdf.getPage(1);
-  const unit = (avail / first.getViewport({ scale: 1 }).width) * state.readerZoom; // CSS scale incl. zoom
+  if (state.reader !== reader || generation !== reader.layout || !box.isConnected) return;
+  const unit = (Math.min(box.clientWidth - 40, 900) / first.getViewport({ scale: 1 }).width) * state.readerZoom;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const approxH = Math.round(first.getViewport({ scale: unit }).height);
+  box.innerHTML = '';
+  const valid = () => state.reader === reader && reader.layout === generation && box.isConnected;
   const rendered = new Set();
   const renderPage = async (n, slot) => {
     if (rendered.has(n)) return; rendered.add(n);
     try {
-      const page = await pdf.getPage(n);
-      const vp = page.getViewport({ scale: Math.min(unit * dpr, 5) }); // cap render resolution
+      const page = await pdf.getPage(n); if (!valid()) return;
+      const vp = page.getViewport({ scale: Math.min(unit * dpr, 4) });
       const canvas = document.createElement('canvas');
       canvas.className = 'pdf-page'; canvas.width = vp.width; canvas.height = vp.height;
+      canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', `Page ${n}`);
       canvas.style.width = `${page.getViewport({ scale: unit }).width}px`;
-      slot.replaceChildren(canvas); slot.style.minHeight = '';
+      // Keep a stable page slot while offscreen canvases are released.
+      slot.style.minHeight = `${page.getViewport({ scale: unit }).height}px`;
+      slot.replaceChildren(canvas);
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-    } catch { rendered.delete(n); }
+      if (!valid() || !slot.isConnected) { canvas.width = 0; canvas.height = 0; }
+    } catch { rendered.delete(n); if (valid()) slot.textContent = `Page ${n} could not be rendered. Reopen the book to retry.`; }
   };
-  const io = new IntersectionObserver(ents => ents.forEach(e => { if (e.isIntersecting) { renderPage(+e.target.dataset.page, e.target); io.unobserve(e.target); } }), { root: box, rootMargin: '1000px 0px' });
-  for (let n = 1; n <= pdf.numPages; n++) { const slot = document.createElement('div'); slot.className = 'pdf-slot'; slot.dataset.page = n; slot.style.minHeight = `${approxH}px`; box.appendChild(slot); io.observe(slot); }
-  state.reader.io = io;
-  if (prevRatio > 0) box.scrollTop = prevRatio * box.scrollHeight; // keep roughly the same place
+  const io = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (!valid()) return;
+    const n = +entry.target.dataset.page;
+    if (entry.isIntersecting) void renderPage(n, entry.target);
+    else if (rendered.has(n)) {
+      // A long book must not retain hundreds of full-resolution canvases.
+      entry.target.replaceChildren(); rendered.delete(n);
+    }
+  }), { root: box, rootMargin: '1000px 0px' });
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const slot = document.createElement('div'); slot.className = 'pdf-slot'; slot.dataset.page = n; slot.style.minHeight = `${approxH}px`;
+    box.appendChild(slot); io.observe(slot);
+  }
+  reader.io = io;
+  let ticking = false;
+  box.onscroll = () => {
+    if (ticking) return; ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false; if (!valid()) return;
+      const edge = box.getBoundingClientRect().top + Math.min(100, box.clientHeight / 3);
+      const slots = [...box.children];
+      const slot = slots.find(slot => slot.getBoundingClientRect().bottom > edge);
+      if (slot && +slot.dataset.page !== reader.page) recordPage(+slot.dataset.page);
+    });
+  };
+  goToPage(reader.page);
 }
 function esc(v = '') { return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function uniq(a = []) { return [...new Set(a.flat().filter(Boolean).map(String))]; }
@@ -605,11 +749,11 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
 }
 
 function hero() {
-  return `<section class="hero"><div class="wrap"><p class="eyebrow">Librarian v0.1 · open book atlas</p><h1>Search every public book catalog at once.</h1><p class="lede">One query fans out across open catalogs, public-domain libraries, and commercial-scale metadata — merged, scored, and traced back to every source.</p>
+  return `<section class="hero"><div class="wrap"><p class="eyebrow">Discover your next read</p><h1>Find a book. Make it yours.</h1><p class="lede">Search across book catalogs and public-domain libraries. Save available full texts for reading here, or keep discoveries on your shelf.</p>
     <form class="search" data-form><div class="search-field">${ICON.search}<input name="q" value="${esc(state.query)}" placeholder="Search title, author, subject, or ISBN…" autocomplete="off" /></div><button class="btn-primary" ${state.loading ? 'disabled' : ''}>${state.loading ? 'Searching…' : 'Search'}</button></form>
     <div class="samples">${SAMPLES.map(q => `<button data-query="${esc(q)}">${esc(q)}</button>`).join('')}</div></div></section>`;
 }
@@ -682,30 +826,38 @@ function aiTab() {
 }
 
 function libraryTab() {
-  const items = state.library;
+  const items = libraryItems(state.library, state.libraryQuery, state.libraryFilter, state.librarySort);
+  const recent = libraryItems(state.library, '', 'reading')[0];
   const cards = items.map(p => `<article class="pdf-card">
-    <button class="pdf-open" data-read="${esc(p.id)}"><span class="pdf-ico">${ICON.read}</span></button>
+    <button class="pdf-open" data-read="${esc(p.id)}" aria-label="Read ${esc(p.title)}" style="--book-color:${tint(p.title)}"><span class="pdf-ico">${ICON.read}</span><span>${p.format === 'text' ? 'BOOK' : 'PDF'}</span></button>
     <div class="pdf-body">
       <strong>${esc(p.title)}</strong>
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
-      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-download-pdf="${esc(p.id)}">Download PDF</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
+      <span class="reading-state">${p.finished ? 'Finished' : p.lastReadAt ? `Page ${p.page || 1} of ${p.totalPages || '…'}` : 'Ready to read'} · Available offline</span>
+      ${p.totalPages ? `<progress value="${p.finished ? p.totalPages : p.page || 1}" max="${p.totalPages}" aria-label="Reading progress"></progress>` : ''}
+      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} ${p.lastReadAt ? 'Resume' : 'Read'}</button><button data-download-pdf="${esc(p.id)}">${NATIVE ? 'Save / Share' : p.format === 'text' ? 'Download text' : 'Download PDF'}</button><button data-finished="${esc(p.id)}">${p.finished ? 'Mark unread' : 'Mark finished'}</button><button data-del-pdf="${esc(p.id)}" aria-label="Remove ${esc(p.title)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
-  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — warmth slider, day or night.</h2><p>Add PDFs you’ve downloaded and read them in-app. Slide from the file’s natural colors to a warm daytime tone, or flip on Dark — the slider fine-tunes brightness there too. Stored privately in this browser.</p></div>
-      <label class="btn-primary import-btn">${state.importing ? 'Adding…' : `${ICON.upload} Add PDF`}<input type="file" accept="application/pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /></label></div>
-    ${state.libError ? `<p class="notice">${esc(state.libError)}</p>` : ''}
+  return `<section class="section library-section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Your personal library</p><h2>${state.library.length ? "Your library." : "A little space for<br>your next great read."}</h2><p>${state.library.length ? "Your books, your place, your pace. Everything here is saved on this device." : "Discover a book, bring your PDFs, and pick up where you left off. Your saved books stay on this device for offline reading."}</p></div>
+      <div class="library-add"><button class="btn-primary" data-import-open>${ICON.upload} Add PDFs</button><input type="file" accept="application/pdf,.pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /><button class="btn-ghost" data-tab="search">Find a book ${ICON.search}</button></div></div>
+    ${state.importing ? '<p class="notice" role="status">Adding your PDFs…</p>' : ''}
+    ${state.libError ? `<p class="notice" role="alert">${esc(state.libError)}</p>` : ''}
     ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a></p>` : ''}
-    ${items.length ? `<div class="pdf-grid">${cards}</div>` : '<label class="pdf-drop" data-import-label><input type="file" accept="application/pdf" multiple data-import hidden />' + `${ICON.upload}<strong>Add your first PDF</strong><span>Drop a file here or click to browse. Books you save from search results land here too.</span></label>`}
+    ${recent && !state.libraryQuery && state.libraryFilter === 'all' ? `<div class="continue-reading"><div><p class="eyebrow">Continue reading</p><h3>${esc(recent.title)}</h3><p>${esc(recent.author || recent.source)} · Page ${recent.page || 1} of ${recent.totalPages || '…'}</p></div><button class="btn-primary" data-read="${esc(recent.id)}">Pick up where you left off ${ICON.read}</button></div>` : ''}
+    <div class="library-tools"><div class="library-filters" role="group" aria-label="Reading status">${[['all', 'All books'], ['reading', 'Reading'], ['unread', 'Unread'], ['finished', 'Finished']].map(([value, label]) => `<button data-library-filter="${value}" aria-pressed="${state.libraryFilter === value}">${label}</button>`).join('')}</div><span class="library-count">${state.library.length} saved</span></div>
+    ${state.library.length ? `<div class="library-search-row"><form data-library-search><input type="search" name="query" aria-label="Search your library" placeholder="Search your library…" value="${esc(state.libraryQuery)}" /><button class="btn-ghost">Search</button></form><select data-library-sort aria-label="Sort library"><option value="recent" ${state.librarySort === 'recent' ? 'selected' : ''}>Recently opened</option><option value="title" ${state.librarySort === 'title' ? 'selected' : ''}>Title A–Z</option></select></div>` : ''}
+    ${items.length ? `<div class="pdf-grid">${cards}</div>` : state.library.length ? '<p class="notice">No books match this view. Try another filter or search.</p>' : `<div class="library-empty"><div class="empty-book">${ICON.read}</div><h3>Your reading room starts here.</h3><p>Add a PDF from Files, or discover a book to save and read in Librarian.</p><button class="btn-ghost" data-query="Jane Austen">Explore classic books</button><label class="pdf-drop" data-import-label><input type="file" accept="application/pdf,.pdf" multiple data-import /><span>Choose PDFs or drop them here</span></label></div>`}
     </div></section>`;
 }
 
 function readerOverlay() {
   const r = state.reader; if (!r) return '';
-  return `<div class="reader" id="pdf-reader" data-dark="${state.readerDark ? '1' : '0'}" style="--pdf-filter:${readerFilter()}">
+  return `<div class="reader" id="pdf-reader" role="dialog" aria-modal="true" aria-label="Reading ${esc(r.title)}" data-dark="${state.readerDark ? '1' : '0'}" style="--pdf-filter:${readerFilter()}">
     <div class="reader-bar"><span class="reader-title">${esc(r.title)}</span>
       <div class="reader-zoom"><button data-zoom="-1" aria-label="Zoom out">&minus;</button><span class="zoom-val">${Math.round(state.readerZoom * 100)}%</span><button data-zoom="1" aria-label="Zoom in">+</button></div>
       <button class="reader-dark ${state.readerDark ? 'active' : ''}" data-dark-toggle>${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}</button>
       <button class="reader-close" data-reader-close aria-label="Close reader">${ICON.x}</button></div>
-    <div class="reader-pages" id="pdf-pages"><div class="reader-msg"><span class="spinner"></span> Opening…</div></div>
+    <div class="reader-pages" id="pdf-pages" tabindex="0" aria-label="Book pages"><div class="reader-msg"><span class="spinner"></span> Opening…</div></div>
+    <div class="reader-footer"><div class="page-navigation"><button data-page-step="-1" aria-label="Previous page">‹</button><form data-page-form><label>Page <input data-page-number name="page" type="number" inputmode="numeric" min="1" value="${r.page}" aria-label="Page number" /></label><span data-page-count>/ …</span><button type="submit">Go</button></form><button data-page-step="1" aria-label="Next page">›</button></div><div class="bookmark-controls"><button data-bookmark-page aria-pressed="false">Bookmark</button><select data-bookmark-jump aria-label="Go to bookmark"><option value="">Bookmarks</option></select></div><span class="reader-status" data-reader-status role="status"></span></div>
   </div>`;
 }
 
@@ -772,7 +924,7 @@ function modal() {
         ${ids.length ? `<div class="modal-section"><h4>Identifiers</h4><div class="id-list">${ids.map(i => `<code>${esc(i)}</code>`).join('')}</div></div>` : ''}
         ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
         ${b.work ? `<div class="modal-section"><h4>Editions</h4><button class="btn-ghost" data-editions="${esc(b.work)}">${ICON.stack} Show all editions</button><div class="editions"></div></div>` : ''}
-        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${(b.links || []).some(l => /\.pdf($|\?)/i.test(l.url) || /pdf/i.test(l.label)) ? `<button class="btn-ghost" data-save-pdf>${b._pdfBusy ? 'Saving…' : `${ICON.read} Save PDF to Library`}</button>` : ''}</div>
+        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${readableLink(b) ? `<button class="btn-primary" data-read-result ${b._pdfBusy ? 'disabled' : ''}>${b._pdfBusy ? 'Saving…' : 'Read in Librarian'}</button><button class="btn-ghost" data-save-pdf ${b._pdfBusy ? 'disabled' : ''}>Save for offline</button>` : '<p class="ai-note">This catalog record has no supported full-text download. Use its source links for previews, purchases, or borrowing.</p>'}</div>
         ${state.shelfError ? `<p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p>` : ''}
         ${b._pdfMsg ? `<p class="ai-note" style="margin-top:10px">${esc(b._pdfMsg)}</p>` : ''}
       </div>
@@ -788,7 +940,7 @@ function activeTab() {
   return searchTab();
 }
 
-function render() { app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
+function render() { if (state.reader?.painted && document.querySelector("#pdf-reader")) return; app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
@@ -805,11 +957,21 @@ function bind() {
   const bd = document.querySelector('.backdrop');
   if (bd) bd.onclick = e => { if (e.target === bd || e.target.closest('.modal-close')) { state.selected = null; render(); } };
   document.querySelectorAll('[data-editions]').forEach(el => el.onclick = e => { e.stopPropagation(); loadEditions(el.dataset.editions, el); });
+  document.querySelector('[data-import-open]')?.addEventListener('click', () => document.querySelector('[data-import]')?.click());
   document.querySelectorAll('[data-import]').forEach(el => el.onchange = e => { const f = e.target.files; if (f && f.length) importPdfs(f); e.target.value = ''; });
   document.querySelectorAll('[data-read]').forEach(el => el.onclick = e => { e.stopPropagation(); openReader(el.dataset.read); });
   document.querySelectorAll('[data-download-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void downloadPdf(el.dataset.downloadPdf); });
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
+  document.querySelector('[data-read-result]')?.addEventListener('click', () => { if (state.selected) void saveResultPdf(state.selected, true); });
+  document.querySelector('[data-library-search]')?.addEventListener('submit', event => { event.preventDefault(); state.libraryQuery = new FormData(event.currentTarget).get('query') || ''; render(); });
+  document.querySelectorAll('[data-library-filter]').forEach(el => el.onclick = () => { state.libraryFilter = el.dataset.libraryFilter; render(); });
+  document.querySelector('[data-library-sort]')?.addEventListener('change', event => { state.librarySort = event.target.value; render(); });
+  document.querySelectorAll('[data-finished]').forEach(el => el.onclick = async () => { const item = state.library.find(item => item.id === el.dataset.finished); if (item) { await updateBook(item.id, item.finished ? { finished: false, lastReadAt: 0, page: 1 } : { finished: true }); render(); } });
+  document.querySelectorAll('[data-page-step]').forEach(el => el.onclick = () => goToPage(state.reader.page + Number(el.dataset.pageStep)));
+  document.querySelector('[data-page-form]')?.addEventListener('submit', event => { event.preventDefault(); goToPage(new FormData(event.currentTarget).get('page')); });
+  document.querySelector('[data-bookmark-page]')?.addEventListener('click', bookmarkPage);
+  document.querySelector('[data-bookmark-jump]')?.addEventListener('change', event => { if (event.target.value) goToPage(event.target.value); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
   document.querySelectorAll('[data-zoom]').forEach(el => el.onclick = () => setZoom(+el.dataset.zoom));
   document.querySelectorAll('[data-src]').forEach(el => el.onchange = () => toggleSource(el.dataset.src));
@@ -843,7 +1005,7 @@ const initialQuery = new URLSearchParams(location.search).get('q');
 render();
 if (initialQuery) search(initialQuery);
 
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+if (!NATIVE && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
 /* ---------- PWA install affordance ---------- */
 let deferredInstall = null;
