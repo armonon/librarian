@@ -1,0 +1,64 @@
+{
+  "name": "Librarian Windows Candidate",
+  "on": {
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "windows-candidate-${{ github.ref }}",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "windows": {
+      "runs-on": "windows-2022",
+      "timeout-minutes": 90,
+      "env": {
+        "CSC_IDENTITY_AUTO_DISCOVERY": "false"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v5"
+        },
+        {
+          "uses": "actions/setup-node@v4",
+          "with": {
+            "node-version": "22",
+            "cache": "npm"
+          }
+        },
+        {
+          "name": "Install locked dependencies",
+          "run": "npm ci"
+        },
+        {
+          "name": "Regression checks",
+          "run": "npm test"
+        },
+        {
+          "name": "Build current renderer",
+          "run": "npm run build"
+        },
+        {
+          "name": "Build Windows x64 NSIS candidate",
+          "run": "npx electron-builder --win nsis --x64 --publish never --config.directories.output=dist-windows --config.win.artifactName='Librarian-${version}-windows-${arch}.${ext}'"
+        },
+        {
+          "name": "Record checksums, source and signing status",
+          "shell": "pwsh",
+          "run": "$ErrorActionPreference = 'Stop'\n$files = @(Get-ChildItem 'dist-windows/*.exe' -File)\nif ($files.Count -eq 0) { throw 'No Windows installer produced' }\nNew-Item -ItemType Directory -Force windows-evidence | Out-Null\n$records = foreach ($file in $files) {\n  $signature = Get-AuthenticodeSignature $file.FullName\n  [ordered]@{ name=$file.Name; bytes=$file.Length; sha256=(Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); authenticode=$signature.Status.ToString() }\n}\n[ordered]@{ product='Librarian'; commit=$env:GITHUB_SHA; runner=$env:RUNNER_OS; architecture='x64'; candidate=$true; publicReleaseReady=$false; cleanInstallQualified=$false; saveExportQualified=$false; installers=@($records) } | ConvertTo-Json -Depth 8 | Set-Content windows-evidence/build-receipt.json\n$records | ForEach-Object { \"$($_.sha256)  $($_.name)\" } | Set-Content windows-evidence/SHA256SUMS.txt"
+        },
+        {
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "librarian-windows-x64-candidate",
+            "path": "dist-windows/*.exe\nwindows-evidence/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
