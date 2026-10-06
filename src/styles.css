@@ -341,6 +341,5 @@ a { color: inherit; }
 .pwa-toast .btn-primary { padding: 7px 14px; }
 .pwa-toast-x { background: none; border: 0; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px; }
 /* thecreateco suite menu slot (kit renders into <tcc-suite-menu>; empty if the kit is absent) */
-.suite-slot { display: inline-flex; align-items: center; margin-left: auto; min-width: 0; }
-.suite-slot:empty, .suite-slot:has(tcc-suite-menu:not(:defined)) { display: none; }
-tcc-suite-menu:not(:defined) { display: none; }
+.suite-slot { display: inline-flex; align-items: center; flex: none; margin-left: 10px; align-self: center; }
+tcc-suite-menu { display: inline-block; width: 36px; height: 36px; flex: none; color: var(--text); } /* box reserved: no shift when the kit loads */

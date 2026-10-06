@@ -2,7 +2,7 @@ import './styles.css';
 import { loadPdfjs, pdfOptions } from './pdf-reader.js';
 import { pdfSave, pdfLibrary, pdfGet, pdfDel } from './pdf-storage.js';
 import { pdfDownload } from './pdf-download.js';
-import { registerServiceWorker, loadSuiteKit, locker, whenLocker, launchedFromLocker } from './pwa.js';
+import { registerServiceWorker, loadSuiteKit, locker, whenLocker } from './pwa.js';
 
 const SOURCES = [
   { name: 'Open Library', badge: 'core', priority: 'Index backbone', live: true, url: 'https://openlibrary.org/developers/api', coverage: 'Open works, editions, ISBNs, authors, subjects, covers, ratings, and Internet Archive read/borrow links.', access: 'Free API, keyless. Powers the editions expander.', best: ['works + editions', 'covers', 'ISBNs', 'subjects'] },
@@ -632,7 +632,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav>${NATIVE ? '' : '<span class="suite-slot" data-suite-slot></span>'}</div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span>${NATIVE ? '' : '<span class="suite-slot" data-suite-slot></span>'}</div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
 }
 
 function hero() {
@@ -879,7 +879,7 @@ if (!NATIVE) {
   loadSuiteKit();
   whenLocker(l => {
     render(); // reveal "Save to Locker" buttons
-    if (launchedFromLocker()) l.onOpen(entry => { void openFromLocker(entry); });
+    l.onOpen(entry => { void openFromLocker(entry); }); // fires only for ?tcc-open= launches (replayed to late handlers)
   });
 }
 

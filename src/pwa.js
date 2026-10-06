@@ -66,4 +66,3 @@ export function whenLocker(fn, timeoutMs = 30000) {
   window.addEventListener('tcc:ready', check);
 }
 
-export const launchedFromLocker = () => new URLSearchParams(location.search).has('tcc-open');
