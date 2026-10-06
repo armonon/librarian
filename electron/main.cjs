@@ -1,5 +1,7 @@
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
+const { externalURL } = require('./navigation.cjs');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -9,13 +11,20 @@ function createWindow() {
     minHeight: 520,
     backgroundColor: '#14110d',
     titleBarStyle: 'hiddenInset',
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   // Open external links (target=_blank / window.open) in the system browser.
-  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
-  // Keep the app on file://; send any external navigation to the default browser.
-  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file://')) { e.preventDefault(); shell.openExternal(url); } });
+  const openExternal = (value) => {
+    const url = externalURL(value);
+    if (url) void shell.openExternal(url).catch(() => {});
+  };
+  win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
+  const documentURL = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).href;
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url.split('#')[0] !== documentURL) { event.preventDefault(); openExternal(url); }
+  });
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault());
 }
 
 app.whenReady().then(() => {

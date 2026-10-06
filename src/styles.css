@@ -323,3 +323,15 @@ a { color: inherit; }
 .suggest-form input:focus { border-color: var(--clay); }
 .suggest-form .btn-primary { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 20px; }
 @media (max-width: 620px) { .suggest-form { flex-direction: column; } .suggest-box { padding: 20px; } }
+
+/* Touch controls keep their hit area on phones and hybrid tablets. */
+@media (any-pointer: coarse), (max-width: 760px) {
+  button, .import-btn, .btn-primary, .btn-secondary { min-height: 44px; touch-action: manipulation; }
+  .modal-close, .reader-zoom button { width: 44px; height: 44px; flex: 0 0 44px; }
+  .filters select, .suggest-form input, textarea { font-size: 16px; min-height: 44px; }
+  .src-toggle { min-height: 44px; min-width: 44px; }
+  .reader-bar { flex-wrap: wrap; }
+  .reader-title { min-width: 0; overflow-wrap: anywhere; }
+  .modal h2 { padding-right: 44px; }
+  .nav { overscroll-behavior-x: contain; }
+}

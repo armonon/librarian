@@ -1,4 +1,7 @@
 import './styles.css';
+import { loadPdfjs, pdfOptions } from './pdf-reader.js';
+import { pdfSave, pdfLibrary, pdfGet, pdfDel } from './pdf-storage.js';
+import { pdfDownload } from './pdf-download.js';
 
 const SOURCES = [
   { name: 'Open Library', badge: 'core', priority: 'Index backbone', live: true, url: 'https://openlibrary.org/developers/api', coverage: 'Open works, editions, ISBNs, authors, subjects, covers, ratings, and Internet Archive read/borrow links.', access: 'Free API, keyless. Powers the editions expander.', best: ['works + editions', 'covers', 'ISBNs', 'subjects'] },
@@ -61,38 +64,64 @@ function loadOffSources() { try { return JSON.parse(localStorage.getItem('librar
 let searchToken = 0;
 
 function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
-function persist() { localStorage.setItem(storeKey, JSON.stringify(state.saved)); }
-function loadLibrary() { try { return JSON.parse(localStorage.getItem(libKey) || '[]'); } catch { return []; } }
-function persistLibrary() { localStorage.setItem(libKey, JSON.stringify(state.library)); }
-
-/* ---------- PDF library: blobs in IndexedDB, metadata index in localStorage ---------- */
-const PDF_DB = 'librarian.pdfs', PDF_STORE = 'pdfs';
-function idb() { return new Promise((res, rej) => { const r = indexedDB.open(PDF_DB, 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(PDF_STORE)) r.result.createObjectStore(PDF_STORE, { keyPath: 'id' }); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-async function pdfPut(rec) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(PDF_STORE, 'readwrite'); t.objectStore(PDF_STORE).put(rec); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
-async function pdfGet(id) { const db = await idb(); return new Promise((res, rej) => { const rq = db.transaction(PDF_STORE, 'readonly').objectStore(PDF_STORE).get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
-async function pdfDel(id) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(PDF_STORE, 'readwrite'); t.objectStore(PDF_STORE).delete(id); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
-
-let pdfjsReady;
-function loadPdfjs() {
-  if (pdfjsReady) return pdfjsReady;
-  const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174';
-  pdfjsReady = new Promise((res, rej) => { const s = document.createElement('script'); s.src = `${base}/pdf.min.js`; s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${base}/pdf.worker.min.js`; res(window.pdfjsLib); }; s.onerror = () => rej(new Error('pdfjs failed to load')); document.head.appendChild(s); });
-  return pdfjsReady;
+function persist(next) {
+  try {
+    const serialized = JSON.stringify(next);
+    localStorage.setItem(storeKey, serialized);
+    if (localStorage.getItem(storeKey) !== serialized) throw new Error('Shelf write was not confirmed');
+  } catch {
+    state.shelfError = 'Could not confirm the shelf change. Check available browser storage and try again.';
+    return false;
+  }
+  state.saved = next;
+  state.shelfError = '';
+  return true;
 }
+function loadLibrary() { try { return JSON.parse(localStorage.getItem(libKey) || '[]'); } catch { return []; } }
+const libraryReady = pdfLibrary(state.library).then(entries => { state.library = entries; render(); }).catch(() => {
+  state.libError = 'Library storage is unavailable. Your original files have not been changed.'; render();
+});
+
+/* ---------- PDF library: bytes in IndexedDB, metadata index in localStorage ---------- */
+
 function fmtSize(n = 0) { return n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`; }
 const uid = () => `pdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 async function importPdfs(files) {
+  if (state.importing) return;
   const pdfs = [...files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
   if (!pdfs.length) { state.libError = 'Those weren’t PDFs. Add .pdf files.'; render(); return; }
   state.importing = true; state.libError = ''; render();
-  for (const f of pdfs) {
-    try { const id = uid(); await pdfPut({ id, blob: f }); state.library.unshift({ id, title: f.name.replace(/\.pdf$/i, ''), author: '', source: 'Imported', size: f.size, addedAt: Date.now() }); }
-    catch (e) { state.libError = 'Could not save (storage full or blocked).'; }
-  }
-  persistLibrary(); state.importing = false; render();
+  try {
+    await libraryReady;
+    for (const f of pdfs) {
+      try {
+        const metadata = { id: uid(), title: f.name.replace(/\.pdf$/i, ''), author: '', source: 'Imported', size: f.size, addedAt: Date.now() };
+        await pdfSave(metadata, f);
+        state.library.unshift(metadata);
+      } catch { state.libError = 'Some PDFs could not be saved (storage full or blocked). Keep the originals and try again.'; }
+    }
+  } finally { state.importing = false; render(); }
 }
-async function removePdf(id) { try { await pdfDel(id); } catch {} state.library = state.library.filter(x => x.id !== id); persistLibrary(); render(); }
+async function removePdf(id) {
+  try { await libraryReady; await pdfDel(id); state.library = state.library.filter(x => x.id !== id); }
+  catch { state.libError = 'Could not remove this PDF. It remains in your library.'; }
+  render();
+}
+
+let readyPdfDownload;
+async function downloadPdf(id) {
+  const meta = state.library.find(item => item.id === id);
+  if (!meta) return;
+  try {
+    const result = pdfDownload(await pdfGet(id), meta.title);
+    const url = URL.createObjectURL(result.blob);
+    if (readyPdfDownload) URL.revokeObjectURL(readyPdfDownload.url);
+    readyPdfDownload = { url, name: result.name };
+    state.libError = ''; render();
+    document.querySelector('[data-pdf-download-ready]')?.click();
+  } catch (error) { state.libError = error.message || 'Could not prepare the PDF download.'; render(); }
+}
 
 async function saveResultPdf(book) {
   const link = (book.links || []).find(l => /\.pdf($|\?)/i.test(l.url) || /pdf/i.test(l.label));
@@ -102,15 +131,21 @@ async function saveResultPdf(book) {
     const r = await fetch(link.url); if (!r.ok) throw 0;
     const blob = await r.blob();
     if (!/pdf/i.test(blob.type) && !/\.pdf($|\?)/i.test(link.url)) throw 0;
-    const id = uid(); await pdfPut({ id, blob });
-    state.library.unshift({ id, title: book.title || 'Untitled', author: (book.authors || [])[0] || '', source: (book.sources || [])[0] || 'Web', size: blob.size, addedAt: Date.now() });
-    persistLibrary(); state.selected = { ...book, _pdfMsg: 'Saved to your Library.' };
-  } catch { state.selected = { ...book, _pdfMsg: 'Couldn’t fetch it here (the host blocks it). Download the PDF, then add it in the Library tab.' }; }
+    await libraryReady;
+    const metadata = { id: uid(), title: book.title || 'Untitled', author: (book.authors || [])[0] || '', source: (book.sources || [])[0] || 'Web', size: blob.size, addedAt: Date.now() };
+    await pdfSave(metadata, blob);
+    state.library.unshift(metadata);
+    state.selected = { ...book, _pdfMsg: 'Saved to your Library.' };
+  } catch { state.selected = { ...book, _pdfMsg: 'Could not fetch or save this PDF. Check available storage, or download the original and add it in Library.' }; }
   render();
 }
 
 function openReader(id) { const meta = state.library.find(x => x.id === id); if (!meta) return; state.reader = { id, title: meta.title, painted: false, io: null }; render(); }
-function closeReader() { if (state.reader?.io) try { state.reader.io.disconnect(); } catch {} state.reader = null; render(); }
+function closeReader() {
+  if (state.reader?.io) try { state.reader.io.disconnect(); } catch {}
+  if (state.reader?.loadingTask) void state.reader.loadingTask.destroy().catch(() => {});
+  state.reader = null; render();
+}
 function readerFilter() { return state.readerDark ? 'invert(0.88) hue-rotate(180deg) brightness(0.95) contrast(0.9)' : 'none'; }
 function applyReaderFilter() { const el = document.querySelector('#pdf-reader'); if (el) { el.style.setProperty('--pdf-filter', readerFilter()); el.dataset.dark = state.readerDark ? '1' : '0'; } }
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
@@ -125,14 +160,18 @@ function setZoom(dir) {
 function toggleReaderDark() { state.readerDark = !state.readerDark; localStorage.setItem('librarian.readerDark', state.readerDark ? '1' : '0'); const btn = document.querySelector('[data-dark-toggle]'); if (btn) { btn.classList.toggle('active', state.readerDark); btn.innerHTML = `${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}`; } applyReaderFilter(); }
 async function paintReader() {
   const box = document.querySelector('#pdf-pages'); if (!box || state.reader.painted) return;
-  state.reader.painted = true;
+  const reader = state.reader;
+  reader.painted = true;
   try {
-    const [lib, rec] = await Promise.all([loadPdfjs(), pdfGet(state.reader.id)]);
+    const [lib, rec] = await Promise.all([loadPdfjs(), pdfGet(reader.id)]);
+    if (state.reader !== reader) return;
     if (!rec?.blob || !document.querySelector('#pdf-pages')) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">File not found in storage.</p>'; return; }
     const data = await rec.blob.arrayBuffer();
-    const pdf = await lib.getDocument({ data }).promise;
-    if (!document.querySelector('#pdf-pages') || !state.reader) return; // closed while loading
-    state.reader.pdf = pdf;
+    if (state.reader !== reader) return;
+    reader.loadingTask = lib.getDocument(pdfOptions(data));
+    const pdf = await reader.loadingTask.promise;
+    if (state.reader !== reader) { await pdf.destroy(); return; }
+    reader.pdf = pdf;
     await layoutPages();
   } catch (e) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">Could not open this PDF.</p>'; }
 }
@@ -511,15 +550,15 @@ function findBook(id) { return state.results.find(x => x.id === id) || (state.se
 function toggleSave(id) {
   const b = findBook(id); if (!b) return;
   const has = state.saved.some(x => key(x) === key(b));
-  if (has) state.saved = state.saved.filter(x => key(x) !== key(b));
-  else { state.saved.unshift(b); state.saved = state.saved.slice(0, 60); }
-  persist();
+  const next = has ? state.saved.filter(x => key(x) !== key(b)) : [b, ...state.saved].slice(0, 60);
+  const hadError = !!state.shelfError;
+  if (!persist(next) || hadError) { render(); return; }
   if (state.tab === 'profile') { render(); return; } // shelf list changes; rebuild it
   syncSaveButtons(); syncShelfCount(); // surgical update — never touch the result images
 }
 function remove(id) {
-  state.saved = state.saved.filter(b => b.id !== id);
-  persist();
+  const hadError = !!state.shelfError;
+  if (!persist(state.saved.filter(b => b.id !== id)) || hadError) { render(); return; }
   const card = [...document.querySelectorAll('[data-remove]')].find(el => el.dataset.remove === id)?.closest('.saved');
   if (card && state.saved.length) { card.remove(); syncShelfCount(); } else render();
 }
@@ -649,11 +688,12 @@ function libraryTab() {
     <div class="pdf-body">
       <strong>${esc(p.title)}</strong>
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
-      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
+      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-download-pdf="${esc(p.id)}">Download PDF</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
   return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — warmth slider, day or night.</h2><p>Add PDFs you’ve downloaded and read them in-app. Slide from the file’s natural colors to a warm daytime tone, or flip on Dark — the slider fine-tunes brightness there too. Stored privately in this browser.</p></div>
       <label class="btn-primary import-btn">${state.importing ? 'Adding…' : `${ICON.upload} Add PDF`}<input type="file" accept="application/pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /></label></div>
     ${state.libError ? `<p class="notice">${esc(state.libError)}</p>` : ''}
+    ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a></p>` : ''}
     ${items.length ? `<div class="pdf-grid">${cards}</div>` : '<label class="pdf-drop" data-import-label><input type="file" accept="application/pdf" multiple data-import hidden />' + `${ICON.upload}<strong>Add your first PDF</strong><span>Drop a file here or click to browse. Books you save from search results land here too.</span></label>`}
     </div></section>`;
 }
@@ -733,6 +773,7 @@ function modal() {
         ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
         ${b.work ? `<div class="modal-section"><h4>Editions</h4><button class="btn-ghost" data-editions="${esc(b.work)}">${ICON.stack} Show all editions</button><div class="editions"></div></div>` : ''}
         <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${(b.links || []).some(l => /\.pdf($|\?)/i.test(l.url) || /pdf/i.test(l.label)) ? `<button class="btn-ghost" data-save-pdf>${b._pdfBusy ? 'Saving…' : `${ICON.read} Save PDF to Library`}</button>` : ''}</div>
+        ${state.shelfError ? `<p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p>` : ''}
         ${b._pdfMsg ? `<p class="ai-note" style="margin-top:10px">${esc(b._pdfMsg)}</p>` : ''}
       </div>
     </div>
@@ -747,7 +788,7 @@ function activeTab() {
   return searchTab();
 }
 
-function render() { app.innerHTML = `${topbar()}<main>${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
+function render() { app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
@@ -766,6 +807,7 @@ function bind() {
   document.querySelectorAll('[data-editions]').forEach(el => el.onclick = e => { e.stopPropagation(); loadEditions(el.dataset.editions, el); });
   document.querySelectorAll('[data-import]').forEach(el => el.onchange = e => { const f = e.target.files; if (f && f.length) importPdfs(f); e.target.value = ''; });
   document.querySelectorAll('[data-read]').forEach(el => el.onclick = e => { e.stopPropagation(); openReader(el.dataset.read); });
+  document.querySelectorAll('[data-download-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void downloadPdf(el.dataset.downloadPdf); });
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
