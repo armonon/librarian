@@ -342,4 +342,5 @@ a { color: inherit; }
 .pwa-toast-x { background: none; border: 0; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px; }
 /* thecreateco suite menu slot (kit renders into <tcc-suite-menu>; empty if the kit is absent) */
 .suite-slot { display: inline-flex; align-items: center; margin-left: auto; min-width: 0; }
-.suite-slot:empty { display: none; }
+.suite-slot:empty, .suite-slot:has(tcc-suite-menu:not(:defined)) { display: none; }
+tcc-suite-menu:not(:defined) { display: none; }
