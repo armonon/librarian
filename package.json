@@ -17,7 +17,8 @@
     "ios:open": "npx cap open ios",
     "electron": "electron .",
     "mac:pack": "npm run build && electron-builder --mac dir",
-    "mac:dist": "npm run build && electron-builder --mac"
+    "mac:dist": "npm run build && electron-builder --mac",
+    "pwa-check": "node scripts/pwa-check.mjs"
   },
   "build": {
     "appId": "com.armonon.librarian",

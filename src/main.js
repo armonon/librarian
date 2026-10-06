@@ -2,6 +2,7 @@ import './styles.css';
 import { loadPdfjs, pdfOptions } from './pdf-reader.js';
 import { pdfSave, pdfLibrary, pdfGet, pdfDel } from './pdf-storage.js';
 import { pdfDownload } from './pdf-download.js';
+import { registerServiceWorker, loadSuiteKit, locker, whenLocker, launchedFromLocker } from './pwa.js';
 
 const SOURCES = [
   { name: 'Open Library', badge: 'core', priority: 'Index backbone', live: true, url: 'https://openlibrary.org/developers/api', coverage: 'Open works, editions, ISBNs, authors, subjects, covers, ratings, and Internet Archive read/borrow links.', access: 'Free API, keyless. Powers the editions expander.', best: ['works + editions', 'covers', 'ISBNs', 'subjects'] },
@@ -88,9 +89,10 @@ function fmtSize(n = 0) { return n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` 
 const uid = () => `pdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 async function importPdfs(files) {
-  if (state.importing) return;
+  const added = [];
+  if (state.importing) return added;
   const pdfs = [...files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-  if (!pdfs.length) { state.libError = 'Those weren’t PDFs. Add .pdf files.'; render(); return; }
+  if (!pdfs.length) { state.libError = 'Those weren’t PDFs. Add .pdf files.'; render(); return added; }
   state.importing = true; state.libError = ''; render();
   try {
     await libraryReady;
@@ -99,9 +101,34 @@ async function importPdfs(files) {
         const metadata = { id: uid(), title: f.name.replace(/\.pdf$/i, ''), author: '', source: 'Imported', size: f.size, addedAt: Date.now() };
         await pdfSave(metadata, f);
         state.library.unshift(metadata);
+        added.push(metadata);
       } catch { state.libError = 'Some PDFs could not be saved (storage full or blocked). Keep the originals and try again.'; }
     }
   } finally { state.importing = false; render(); }
+  return added;
+}
+
+/* ---------- Locker (thecreateco suite kit, optional) ---------- */
+// Save a library PDF to Locker. Called straight from the click: off thecreatingco.com
+// the kit may need a popup handoff, which browsers only allow on a user gesture.
+async function saveToLocker(id) {
+  const l = locker(); const meta = state.library.find(item => item.id === id);
+  if (!l || !meta) return;
+  try {
+    const result = pdfDownload(await pdfGet(id), meta.title);
+    await l.save({ name: result.name, type: 'application/pdf', blob: result.blob, meta: { title: meta.title, author: meta.author || '', source: meta.source || '' } });
+    state.libError = ''; state.libNotice = `Saved “${meta.title}” to Locker (stored in this browser on this device).`;
+  } catch (error) { state.libNotice = ''; state.libError = `Locker: ${error?.message || 'could not save this PDF.'}`; }
+  render();
+}
+// Opened from Locker (?tcc-open=<id>): a PDF is added to the Library and opened in the reader.
+async function openFromLocker(entry) {
+  const isPdf = entry && entry.blob && (entry.type === 'application/pdf' || /\.pdf$/i.test(entry.name || ''));
+  state.tab = 'library';
+  if (!isPdf) { state.libError = `${entry?.name || 'That file'} isn’t a PDF — Librarian opens PDFs from Locker.`; render(); return; }
+  const name = /\.pdf$/i.test(entry.name) ? entry.name : `${entry.name || 'Locker file'}.pdf`;
+  const [added] = await importPdfs([new File([entry.blob], name, { type: 'application/pdf' })]);
+  if (added) { state.libNotice = `Opened “${added.title}” from Locker — it’s now in your Library.`; openReader(added.id); }
 }
 async function removePdf(id) {
   try { await libraryReady; await pdfDel(id); state.library = state.library.filter(x => x.id !== id); }
@@ -605,7 +632,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">atlas</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Search')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav>${NATIVE ? '' : '<span class="suite-slot" data-suite-slot></span>'}</div></header>`;
 }
 
 function hero() {
@@ -688,11 +715,12 @@ function libraryTab() {
     <div class="pdf-body">
       <strong>${esc(p.title)}</strong>
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
-      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-download-pdf="${esc(p.id)}">Download PDF</button><button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
+      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} Read</button><button data-download-pdf="${esc(p.id)}">Download PDF</button>${locker() ? `<button data-locker-pdf="${esc(p.id)}">Save to Locker</button>` : ''}<button data-del-pdf="${esc(p.id)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
-  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — warmth slider, day or night.</h2><p>Add PDFs you’ve downloaded and read them in-app. Slide from the file’s natural colors to a warm daytime tone, or flip on Dark — the slider fine-tunes brightness there too. Stored privately in this browser.</p></div>
+  return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">PDF library</p><h2>Read your books here — warmth slider, day or night.</h2><p>Add PDFs you’ve downloaded and read them in-app. Slide from the file’s natural colors to a warm daytime tone, or flip on Dark — the slider fine-tunes brightness there too. Stored privately in this browser.${NATIVE ? '' : ' Works offline after your first visit.'}</p></div>
       <label class="btn-primary import-btn">${state.importing ? 'Adding…' : `${ICON.upload} Add PDF`}<input type="file" accept="application/pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /></label></div>
     ${state.libError ? `<p class="notice">${esc(state.libError)}</p>` : ''}
+    ${state.libNotice ? `<p class="notice" role="status">${esc(state.libNotice)}</p>` : ''}
     ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a></p>` : ''}
     ${items.length ? `<div class="pdf-grid">${cards}</div>` : '<label class="pdf-drop" data-import-label><input type="file" accept="application/pdf" multiple data-import hidden />' + `${ICON.upload}<strong>Add your first PDF</strong><span>Drop a file here or click to browse. Books you save from search results land here too.</span></label>`}
     </div></section>`;
@@ -788,7 +816,9 @@ function activeTab() {
   return searchTab();
 }
 
-function render() { app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
+const suiteMenu = NATIVE ? null : document.createElement('tcc-suite-menu');
+function placeSuiteMenu() { const slot = suiteMenu && document.querySelector('[data-suite-slot]'); if (slot && suiteMenu.parentNode !== slot) slot.append(suiteMenu); }
+function render() { suiteMenu?.remove(); app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; placeSuiteMenu(); bind(); if (state.reader && !state.reader.painted) paintReader(); }
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
@@ -808,6 +838,7 @@ function bind() {
   document.querySelectorAll('[data-import]').forEach(el => el.onchange = e => { const f = e.target.files; if (f && f.length) importPdfs(f); e.target.value = ''; });
   document.querySelectorAll('[data-read]').forEach(el => el.onclick = e => { e.stopPropagation(); openReader(el.dataset.read); });
   document.querySelectorAll('[data-download-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void downloadPdf(el.dataset.downloadPdf); });
+  document.querySelectorAll('[data-locker-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void saveToLocker(el.dataset.lockerPdf); });
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
@@ -843,7 +874,14 @@ const initialQuery = new URLSearchParams(location.search).get('q');
 render();
 if (initialQuery) search(initialQuery);
 
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+if (!NATIVE) {
+  registerServiceWorker();
+  loadSuiteKit();
+  whenLocker(l => {
+    render(); // reveal "Save to Locker" buttons
+    if (launchedFromLocker()) l.onOpen(entry => { void openFromLocker(entry); });
+  });
+}
 
 /* ---------- PWA install affordance ---------- */
 let deferredInstall = null;

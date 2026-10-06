@@ -64,3 +64,24 @@ Best starting stack:
 3. Internet Archive for availability and public-domain/full-text links.
 4. Gutenberg/Standard Ebooks/LibriVox for free reading/listening layers.
 5. Google Books only as an enrichment layer, not the commercial backbone.
+
+## Installable & offline (PWA) — thecreateco Wave 4
+
+Librarian installs as an app and **works offline after your first visit** (web only; the iOS/Electron shells don't use a service worker).
+
+- `public/sw.js` (hand-written, no Workbox): precaches the app shell — the list and a content `VERSION` are injected at build time by the `pwaPrecache` plugin in `vite.config.js`. Navigations are network-first (3 s) with cached-page then shell fallback. `/pdfjs/` support files are cached on first use so the reader works offline.
+- **Never cached:** your PDFs (IndexedDB only), Netlify functions (`/.netlify/*`), and every cross-origin request (catalog APIs, book downloads, Google Fonts). Only exception: the public thecreateco suite kit script.
+- **No silent updates:** a new worker waits; `src/pwa.js` shows "Update available — Reload", and only that click posts `SKIP_WAITING`.
+- `/sw.js` is served `Cache-Control: no-cache` (`public/_headers`) so updates and the kill switch reach everyone quickly.
+- `npm run build && npm run pwa-check` — headless Chromium: manifest/icons, SW control, import a PDF → offline reload → reader paints it, cache audit (no PDFs/functions/cross-origin), and a v1→v2 update-prompt cycle. `PWA_CHECK_URL=https://librarian.thecreatingco.com/ npm run pwa-check` runs the offline checks against a deployed site.
+
+### Service worker kill switch
+
+If the service worker itself ever misbehaves in production: `npm run build && cp scripts/kill-switch-sw.js dist/sw.js`, then deploy `dist`. Every browser that installed it unregisters it and clears Librarian's caches on its next visit (PDFs and shelf are untouched). Restoring an older deploy alone does **not** remove an installed worker.
+
+## thecreateco suite menu + Locker
+
+On the web, `src/pwa.js` adds `<script src="https://thecreatingco.com/suite/v1/suite.js" data-app="librarian" defer>` and the header carries a persistent `<tcc-suite-menu>`. Optional: if the kit is missing or offline, nothing changes. The CSP allows `https://thecreatingco.com` for scripts, fonts and the Locker bridge frame.
+
+- **Save to Locker** on each Library PDF (stored in this browser on this device — no account, no cloud).
+- **Open from Locker:** `/?tcc-open=<id>` with a PDF adds it to the Library and opens the reader.

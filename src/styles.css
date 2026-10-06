@@ -335,3 +335,11 @@ a { color: inherit; }
   .modal h2 { padding-right: 44px; }
   .nav { overscroll-behavior-x: contain; }
 }
+
+/* PWA update/offline toast (src/pwa.js) */
+.pwa-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 80; display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100% - 28px); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 14px; padding: 10px 12px 10px 16px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); font-size: 0.9rem; color: var(--text); line-height: 1.4; }
+.pwa-toast .btn-primary { padding: 7px 14px; }
+.pwa-toast-x { background: none; border: 0; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px; }
+/* thecreateco suite menu slot (kit renders into <tcc-suite-menu>; empty if the kit is absent) */
+.suite-slot { display: inline-flex; align-items: center; margin-left: auto; min-width: 0; }
+.suite-slot:empty { display: none; }
