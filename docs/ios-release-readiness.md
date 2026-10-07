@@ -105,3 +105,10 @@ have not been qualified by this iPhone/iPad release effort.
 - [App review guidelines](https://developer.apple.com/app-store/review/guidelines/)
 - [Export compliance](https://developer.apple.com/help/app-store-connect/manage-app-information/overview-of-export-compliance)
 - [Gutenberg OPDS catalog](https://dev.gutenberg.org/ebooks/offline_catalogs.html)
+
+## Latest submission validation
+
+A fresh Add for Review check returned four blockers: Content Rights, export
+compliance, App Privacy and age-rating answers. See
+[app-store-declarations.md](app-store-declarations.md) for code-backed facts and
+the owner information needed to complete them. No submission was created.
