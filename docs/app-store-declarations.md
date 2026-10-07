@@ -3,7 +3,8 @@
 Prepared from the release source and Apple validation on October 6, 2026.
 This worksheet is technical evidence, not an approved legal classification or
 an assertion that third-party rights have been obtained. No declaration below
-has been submitted on the owner's behalf.
+has been submitted on the owner's behalf. App Review notes have been updated
+with the owner-confirmed product purpose and absence of analytics.
 
 ## Current Apple validation
 
@@ -99,3 +100,34 @@ offline cold launch, relaunch/progress/bookmarks, rotation and background recove
 large/mixed-page PDFs, low storage, VoiceOver and increased text size. Record
 OS/model, pass/fail and any reproduction steps. Simulator/WebKit successes do
 not replace these checks.
+
+## Owner clarification — October 7, 2026
+
+The owner described Librarian as a book search engine and PDF reader, confirmed
+no analytics, described the project as a personal hobby that may run ads later,
+and reported no France encryption or China publication paperwork.
+
+The current binary has no advertising implementation; future ads require a new
+privacy/age-rating review as applicable. Apple review notes now describe the
+personal search/reader purpose, no current ads or analytics, on-device imported
+files, and catalog/proxy search requests. No Data Not Collected declaration was
+saved: lack of analytics does not resolve request-log retention.
+
+Apple's trader guidance considers advertising, revenue and commercialization
+intent. Because the owner may add ads, hobby status alone was not treated as a
+conclusive non-trader declaration, particularly for account-wide settings.
+
+The original worldwide preference remains in effect. A question is pending
+about excluding France and China mainland for the first release versus retaining
+worldwide availability while resolving documentation. No territory was removed.
+This choice alone would not resolve privacy, age ratings or content rights.
+
+Provider evidence narrows, but does not finish, the rights/privacy review:
+Project Gutenberg permits linking without requesting permission, but does not
+guarantee copyright status outside the US. Netlify documents observability
+containing request URLs and client IPs; the account's actual enabled features,
+retention and purposes still need verification.
+
+- https://www.gutenberg.org/policy/permission
+- https://docs.netlify.com/manage/monitoring/observability/overview/
+- https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements

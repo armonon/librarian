@@ -44,6 +44,11 @@ access to paid, protected, or borrow-only books.
 
 ## App Review notes
 
+Librarian is a book search engine and personal PDF/text reader, developed as a
+personal hobby project. This version is free and contains no advertising or
+analytics. Imported documents and saved reading progress remain on the device.
+Discover sends search terms to catalog services directly or through a hosted proxy.
+
 No login or purchase is required. Library is the initial screen. Add PDFs opens
 the system file picker. Discover searches online catalogs; choose a supported
 record and select Read in Librarian or Save for offline. Unsupported catalog
