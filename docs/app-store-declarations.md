@@ -2,18 +2,17 @@
 
 Prepared from the release source and Apple validation on October 6, 2026.
 This worksheet is technical evidence, not an approved legal classification or
-an assertion that third-party rights have been obtained. No declaration below
-has been submitted on the owner's behalf. App Review notes have been updated
+an assertion that third-party rights have been obtained. The age-rating questionnaire was saved on October 7, 2026. The other
+declarations remain unresolved. App Review notes have been updated
 with the owner-confirmed product purpose and absence of analytics.
 
 ## Current Apple validation
 
-The Add for Review check rejects submission for exactly these four items:
+The Add for Review check rejects submission for these three items after saving age ratings on October 7:
 
 1. Content Rights Information is missing.
 2. Build 3 lacks export compliance information.
 3. An Admin must provide App Privacy practices.
-4. Required age-rating questions are unanswered.
 
 Screenshots, copyright and review-contact information are no longer listed as
 validation errors. Worldwide regional eligibility and real-device qualification
@@ -65,16 +64,34 @@ Owner/hosting administrator must establish retention, purposes, identity linkage
 and tracking practices for search/request data before the privacy label is saved.
 The iOS required-reason manifest for file timestamps is separate from that label.
 
-## Age-rating facts for owner review
+## Age rating saved — October 7, 2026
 
-The app has no implemented parental controls, age assurance, social feed, direct
-messaging, advertising or gambling gameplay. It is not presented as a Kids app.
-Personal imported files are not broadcast to other users. Catalog discovery is
-not age-filtered and can expose book descriptions, covers and downloadable works
-with mature subject matter. Do not mark all content categories None based only
-on the app's neutral interface. Assess the catalogs' supplied content against
-Apple's frequency definitions and determine whether third-party content falls
-within the user-generated-content definition before completing the questionnaire.
+The owner explicitly chose to keep broad search and accept the resulting rating.
+Apple calculated 16+ (173 countries or regions), with regional exceptions,
+and a global 17+ for operating systems earlier than version 26. No override or
+Kids category was selected. App Information was saved; a subsequent Add for
+Review check no longer lists age ratings as a blocker.
+
+Questionnaire assessment for this release:
+
+- No parental controls, age assurance, unrestricted in-app web browsing, shared
+  user-generated content, social media, messaging, advertising, or gambling.
+- Infrequent profanity/crude humor, horror/fear, and alcohol/tobacco/drug references.
+- Infrequent medical/treatment information; health/wellness topics available.
+- Frequent mature/suggestive themes; infrequent non-explicit sexual content/nudity.
+- Infrequent fantasy/realistic violence and weapons references.
+- No app-provided graphic sexual content or prolonged graphic/sadistic violence
+  identified; those questionnaire categories were answered None.
+- No simulated gambling, contests, gambling or loot boxes.
+
+These are an assessment of the search/reader experience and ordinary literary
+content, not a claim that every remotely searchable title has been audited.
+There is no age filter. Reassess these answers if actual surfaced content or
+features change, especially advertising. Personal imports are not shared with
+other app users. Search provider availability remains unchanged.
+
+Evidence: `releases/ios-1.0-3/age-rating-saved.png` and
+`releases/ios-1.0-3/submission-after-age-rating.png` (local ignored artifacts).
 
 https://developer.apple.com/help/app-store-connect/reference/app-information/age-ratings-values-and-definitions
 
@@ -120,7 +137,7 @@ conclusive non-trader declaration, particularly for account-wide settings.
 The original worldwide preference remains in effect. A question is pending
 about excluding France and China mainland for the first release versus retaining
 worldwide availability while resolving documentation. No territory was removed.
-This choice alone would not resolve privacy, age ratings or content rights.
+This territory choice alone would not resolve privacy or content rights.
 
 Provider evidence narrows, but does not finish, the rights/privacy review:
 Project Gutenberg permits linking without requesting permission, but does not

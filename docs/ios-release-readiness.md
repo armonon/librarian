@@ -1,4 +1,4 @@
-# Librarian 1.0 (3) — release readiness, October 6, 2026
+# Librarian 1.0 (3) — release readiness, October 7, 2026
 
 **Decision: technical candidate uploaded; not ready for App Review submission.**
 App Store Connect record `6819934484`, **Librarian: Books & PDFs**, remains Prepare
@@ -72,8 +72,9 @@ needs physical-device testing.
 
 ## Remaining gates and next actions
 
-1. **Content rights and age rating — owner:** confirm permission for third-party
-   catalogs/content in launch territories and review content-frequency answers.
+1. **Content rights — owner:** confirm permission for third-party
+   catalogs/content in launch territories. Age ratings are saved: 16+ globally
+   on current operating systems, 17+ before version 26, with regional exceptions.
    Do not infer worldwide copyright permission from US public-domain status.
 2. **App Privacy — owner/hosting administrator:** verify retention of search
    queries, IPs and request logs, analytics and provider practices, then complete
@@ -108,7 +109,8 @@ have not been qualified by this iPhone/iPad release effort.
 
 ## Latest submission validation
 
-A fresh Add for Review check returned four blockers: Content Rights, export
-compliance, App Privacy and age-rating answers. See
+After saving the age-rating questionnaire on October 7, a fresh Add for Review
+check returned three blockers: Content Rights, export compliance and App Privacy.
+Broad search remains enabled as requested. See
 [app-store-declarations.md](app-store-declarations.md) for code-backed facts and
 the owner information needed to complete them. No submission was created.

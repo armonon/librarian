@@ -35,12 +35,14 @@ The current app has no age-filtered or curated discovery boundary. Neither a
 simple keyword blacklist nor an all-ages marketing statement establishes that
 boundary. Keep broad discovery and complete the questionnaire accurately, or
 build a reviewed age-appropriate catalog with controls that prevent bypass through
-other providers. This product choice is pending; no features or providers were
-silently removed and no 4+ declaration was submitted.
+other providers. The owner chose broad discovery on October 7. The questionnaire is now saved
+with Apple’s calculated 16+ rating (17+ on earlier operating systems, with
+regional exceptions). No features or providers were removed and no 4+
+declaration was submitted. See app-store-declarations.md for the answers.
 
 ## Current operational blocker
 
-App Store Connect is signed out. Sign-in was requested from the owner. No new
-Apple declarations can be saved until access is restored. Export documentation,
+App Store Connect access was restored and the age rating was saved. Content
+rights, export documentation,
 privacy log practices, regional availability and physical-device qualification
 remain as documented in app-store-declarations.md.
