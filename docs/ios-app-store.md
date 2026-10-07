@@ -122,3 +122,10 @@ Release QA iPad. Screenshots were visually inspected. Vite development and previ
 serve the local Gutenberg endpoint, and the PDF worker is excluded from dependency
 prebundling to preserve its URL import in WebKit development. Native release
 signing, TestFlight upload, and web deployment have not been performed.
+
+## Release candidate 1.0 (3)
+
+See [ios-release-readiness.md](ios-release-readiness.md) for the current release
+decision, archive path, test evidence, and signing/device gates. Prepared store
+copy is in [app-store-metadata.md](app-store-metadata.md). This newer assessment
+supersedes the earlier readiness notes above; no signed submission is complete.

@@ -13,6 +13,7 @@ export async function nativeExport(blob, name) {
   const path = `exports/${Date.now()}-${name.replace(/[^\p{L}\p{N}._ -]/gu, '_')}`;
   const { uri } = await Filesystem.writeFile({ path, data, directory: Directory.Cache, recursive: true });
   try { await Share.share({ title: name, url: uri, dialogTitle: 'Save or share your book' }); }
+  catch (error) { if (!/cancel/i.test(error?.message || '')) throw error; }
   finally { await Filesystem.deleteFile({ path, directory: Directory.Cache }).catch(() => {}); }
   return true;
 }

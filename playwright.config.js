@@ -3,6 +3,7 @@ export default defineConfig({
   testDir: './tests/browser', timeout: 45000, fullyParallel: true,
   use: { serviceWorkers: 'block', baseURL: 'http://127.0.0.1:4178', screenshot: 'only-on-failure', trace: 'retain-on-failure' },
   projects: [
+    { name: 'small-iPhone', use: { ...devices['iPhone 13'], viewport: { width: 320, height: 568 }, browserName: 'webkit' } },
     { name: 'iPhone', use: { ...devices['iPhone 13'], browserName: 'webkit' } },
     { name: 'iPad', use: { ...devices['iPad Pro 11'], browserName: 'webkit' } },
   ],

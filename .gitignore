@@ -15,3 +15,6 @@ public/pdfjs/
 # Browser verification output
 test-results/
 playwright-report/
+
+# Local iOS archives and release evidence
+releases/

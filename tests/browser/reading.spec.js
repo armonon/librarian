@@ -84,3 +84,39 @@ test('discover a full-text book, save it once, and read it offline', async ({ pa
   await expect(page.locator('.text-page')).toContainText('Elizabeth');
   await expect(page.locator('[data-page-number]')).toHaveValue('2');
 });
+
+test('release recovery, privacy, accessibility, and deliberate removal', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('librarian.saved.v1', '{"not":"an array"}');
+    localStorage.setItem('librarian.readerZoom', 'NaN');
+  });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.locator('[data-tab="privacy"]').click();
+  await expect(page.locator('.privacy-copy')).toContainText('Imported PDFs');
+  await expect(page.getByRole('link', { name: 'Company privacy policy' })).toHaveAttribute('href', 'https://thecreatingco.com/privacy/');
+  await page.locator('[data-tab="library"]').click();
+  await page.locator('[data-import]').first().setInputFiles({ name: 'Not a real.pdf', mimeType: 'application/pdf', buffer: Buffer.from('<html>Sign in</html>') });
+  await expect(page.getByRole('alert')).toContainText('not a PDF');
+  await expect(page.locator('.pdf-card')).toHaveCount(0);
+  await page.locator('[data-import]').first().setInputFiles({ name: 'Accessible.pdf', mimeType: 'application/pdf', buffer: pdfFixture() });
+  await page.locator('.pdf-actions [data-read]').click();
+  await expect(page.locator('.pdf-page').first()).toBeVisible();
+  await page.locator('[data-text-mode]').click();
+  await expect(page.locator('.text-page')).toContainText('Reading test page 1');
+  await page.locator('[data-page-step="1"]').click();
+  await expect(page.locator('.text-page')).toContainText('Reading test page 2');
+  await page.locator('[data-text-mode]').click();
+  await expect(page.locator('.pdf-page').first()).toBeVisible();
+  await page.locator('[data-reader-close]').click();
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.locator('[data-del-pdf]').click();
+  await expect(page.locator('.pdf-card')).toHaveCount(1);
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('[data-del-pdf]').click();
+  await expect(page.locator('.pdf-card')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.pdf-card')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});

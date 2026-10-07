@@ -52,7 +52,7 @@
     "electron-builder": "^26.15.3",
     "fake-indexeddb": "^6.2.5",
     "pdfjs-dist": "6.3.289",
-    "vite": "latest"
+    "vite": "8.3.3"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.2",

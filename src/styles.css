@@ -400,3 +400,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .reader-dark { grid-column: 2 / 4; grid-row: 2; justify-content: center; min-height: 44px; }
   .reader-pages { padding: 12px; }
 }
+
+.privacy-copy { max-width: 780px; line-height: 1.75; }
+.privacy-copy h3 { margin-top: 28px; }
+.privacy-copy a { color: var(--clay); text-decoration: underline; }
+.text-page h2 { font-size: 1.2em; }
+.book:focus-visible, .saved:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition: none !important; animation: none !important; } }
+@media (max-width: 760px) {
+  .nav { flex-wrap: wrap; }
+  .reader-bar [data-text-mode] { grid-row: 3; grid-column: 1 / -1; }
+  .library-section { padding-top: 30px; }
+  .library-section .titles h2 { font-size: 2.2rem; }
+  .mark-tag { font-size: .58rem; }
+}

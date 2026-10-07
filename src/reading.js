@@ -11,7 +11,7 @@ export function readableLink(book) {
   for (const link of book.links || []) {
     try {
       const url = new URL(link.url);
-      if (url.protocol !== 'https:') continue;
+      if (url.protocol !== 'https:' || url.username || url.password) continue;
       if (/\.pdf($|\?)/i.test(url.href) || /pdf/i.test(link.label)) return { ...link, format: 'pdf' };
     } catch {}
   }

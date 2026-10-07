@@ -1,4 +1,9 @@
 import './styles.css';
+import { parseGutenbergCatalog } from './gutenberg-catalog.js';
+import { externalURL } from './external-links.js';
+import { fetchPdf, MAX_BOOK_BYTES } from './book-download.js';
+import { readPreference, writePreference, readList, zoomPreference } from './preferences.js';
+import { privacySection } from './privacy.js';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { nativeExport } from './native-export.js';
 import { libraryItems, readableLink, readingPage, validatePdf, textPages } from './reading.js';
@@ -31,9 +36,9 @@ const FEATURES = [
   ['atlas-search', 'Atlas search', 'One query fans out to 15 catalogs — trade, academic, archive, and national libraries — then merges duplicate editions across sources by ISBN and a fuzzy title/author fingerprint.'],
   ['quality-score', 'Metadata quality score', 'Every result is scored by completeness so the most complete catalog record naturally rises to the top.'],
   ['availability', 'Availability first', 'Filter toward free ebooks, public-domain downloads, previews, borrowable scans, or catalog-only records.'],
-  ['stacks', 'Personal stacks', 'Save discoveries into a working shelf for research, shopping, or syllabus building — stored in your browser.'],
+  ['stacks', 'Personal stacks', 'Save discoveries into a working shelf for research, shopping, or syllabus building — stored on your device.'],
   ['provenance', 'Source provenance', 'Every card shows which APIs supplied the record and links straight back to each source to verify it.'],
-  ['roadmap', 'Expansion playbook', 'A ranked source map and architecture for turning this into a serious, canonical book graph.'],
+  ['offline-reading', 'Your offline reading room', 'Save supported books and PDFs, bookmark pages, and return to your place without an internet connection.'],
 ];
 
 const BLUEPRINT = [
@@ -62,11 +67,11 @@ const PROXY = `${FN_BASE}/.netlify/functions/proxy`;
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'library', libraryQuery: '', libraryFilter: 'all', librarySort: 'recent', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: localStorage.getItem('librarian.readerDark') === '1', readerZoom: Math.max(0.5, Math.min(3, +(localStorage.getItem('librarian.readerZoom') || 1))), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
-function loadOffSources() { try { return JSON.parse(localStorage.getItem('librarian.offSources') || '[]'); } catch { return []; } }
+const state = { tab: 'library', libraryQuery: '', libraryFilter: 'all', librarySort: 'recent', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: readPreference('librarian.readerDark', '0') === '1', readerZoom: zoomPreference(readPreference('librarian.readerZoom', '1')), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
+function loadOffSources() { return readList('librarian.offSources', item => typeof item === 'string'); }
 let searchToken = 0;
 
-function loadSaved() { try { return JSON.parse(localStorage.getItem(storeKey) || '[]'); } catch { return []; } }
+function loadSaved() { return readList(storeKey, item => item && typeof item.id === 'string' && typeof item.title === 'string' && ['authors', 'ids', 'sources', 'links', 'subjects', 'langs'].every(field => item[field] === undefined || Array.isArray(item[field]))); }
 function persist(next) {
   try {
     const serialized = JSON.stringify(next);
@@ -80,7 +85,7 @@ function persist(next) {
   state.shelfError = '';
   return true;
 }
-function loadLibrary() { try { return JSON.parse(localStorage.getItem(libKey) || '[]'); } catch { return []; } }
+function loadLibrary() { return readList(libKey, item => item && typeof item.id === 'string' && typeof item.title === 'string'); }
 const libraryReady = pdfLibrary(state.library).then(entries => { state.library = entries; render(); }).catch(() => {
   state.libError = 'Library storage is unavailable. Your original files have not been changed.'; render();
 });
@@ -100,14 +105,17 @@ async function importPdfs(files) {
     for (const f of pdfs) {
       try {
         const metadata = { id: uid(), title: f.name.replace(/\.pdf$/i, ''), author: '', source: 'Imported', size: f.size, addedAt: Date.now() };
+        if (f.size > MAX_BOOK_BYTES) throw new Error('PDFs must be 75 MB or smaller.');
         await validatePdf(f);
         await pdfSave(metadata, f);
         state.library.unshift(metadata);
-      } catch { state.libError = 'Some PDFs could not be saved (storage full or blocked). Keep the originals and try again.'; }
+      } catch (error) { state.libError = `Some PDFs could not be saved. ${error.message || 'Storage may be full or blocked.'} Keep the originals and try again.`; }
     }
   } finally { state.importing = false; render(); }
 }
 async function removePdf(id) {
+  const book = state.library.find(item => item.id === id);
+  if (!book || !window.confirm(`Remove “${book.title}” and its reading progress from Librarian? Export a copy first if needed.`)) return;
   try { await libraryReady; await pdfDel(id); state.library = state.library.filter(x => x.id !== id); }
   catch { state.libError = 'Could not remove this PDF. It remains in your library.'; }
   render();
@@ -155,9 +163,7 @@ async function saveResultPdf(book, read = false) {
       if (typeof text !== 'string' || !/Project Gutenberg/i.test(text) || /<html/i.test(text.slice(0, 500))) throw new Error('The source did not return a readable book.');
       blob = new Blob([text], { type: 'text/plain' });
     } else {
-      const response = await fetch(link.url, { signal: AbortSignal.timeout(30000) });
-      if (!response.ok) throw new Error('Could not download this PDF.');
-      blob = await response.blob();
+      blob = await fetchPdf(link.url);
       await validatePdf(blob);
     }
     await libraryReady;
@@ -176,6 +182,9 @@ async function updateBook(id, changes) {
   try {
     const updated = await pdfUpdate(id, changes);
     state.library = state.library.map(item => item.id === id ? updated : item);
+    state.libError = '';
+    const notice = document.querySelector('[data-reader-status]'); if (notice) notice.textContent = '';
+    if (!state.reader && state.tab === 'library') render();
     return updated;
   } catch (error) {
     state.libError = 'Could not save your reading changes. Check available storage and try again.';
@@ -221,26 +230,33 @@ function updateReaderControls() {
 function recordPage(page) {
   const r = state.reader; if (!r) return;
   const total = r.pdf?.numPages || r.text?.length;
+  if (!total) return;
   r.page = readingPage(page, total);
   updateReaderControls();
   void updateBook(r.id, { page: r.page, totalPages: total, lastReadAt: Date.now() });
 }
 function goToPage(page) {
   const r = state.reader; if (!r) return;
+  if (!r.pdf && !r.text) return;
   r.page = readingPage(page, r.pdf?.numPages || r.text?.length);
   if (r.text) paintTextPage();
+  else if (r.textMode) void paintPdfTextPage();
   else {
     const box = document.querySelector('#pdf-pages');
     const slot = box?.querySelector(`[data-page="${r.page}"]`);
     if (slot) box.scrollTop += slot.getBoundingClientRect().top - box.getBoundingClientRect().top - 10;
   }
+  const input = document.querySelector('[data-page-number]'); if (input) input.value = r.page;
   recordPage(r.page);
 }
 async function bookmarkPage() {
   const r = state.reader; if (!r) return;
+  if ((!r.pdf && !r.text) || r.bookmarkBusy) return;
+  r.bookmarkBusy = true;
   const pages = readerMeta()?.bookmarks || [];
   const next = pages.includes(r.page) ? pages.filter(page => page !== r.page) : [...pages, r.page].sort((a, b) => a - b);
   await updateBook(r.id, { bookmarks: next });
+  r.bookmarkBusy = false;
   if (state.reader === r) updateReaderControls();
 }
 function paintTextPage() {
@@ -249,6 +265,31 @@ function paintTextPage() {
   box.innerHTML = `<article class="text-page" style="font-size:${Math.round(18 * state.readerZoom)}px"><pre>${esc(r.text[r.page - 1])}</pre></article>`;
   box.scrollTop = 0;
 }
+async function paintPdfTextPage() {
+  const reader = state.reader, box = document.querySelector('#pdf-pages');
+  if (!reader?.pdf || !reader.textMode || !box) return;
+  const pageNumber = reader.page;
+  box.onscroll = null;
+  box.innerHTML = '<p class="reader-msg" role="status">Loading page text…</p>';
+  try {
+    const page = await reader.pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    if (state.reader !== reader || !reader.textMode || reader.page !== pageNumber || !box.isConnected) return;
+    const text = content.items.map(item => item.str === undefined ? '' : item.str + (item.hasEOL ? '\n' : ' ')).join('').trim();
+    box.innerHTML = `<article class="text-page" style="font-size:${Math.round(18 * state.readerZoom)}px"><h2>Page ${pageNumber}</h2><pre>${esc(text || 'No embedded text was found on this page. This scan needs OCR before its text can be read aloud.')}</pre></article>`;
+    box.scrollTop = 0;
+  } catch { if (state.reader === reader && reader.textMode) box.innerHTML = '<p class="reader-msg">Page text could not be read. Switch to Page view to see the original.</p>'; }
+}
+function togglePdfText() {
+  const reader = state.reader; if (!reader?.pdf) return;
+  reader.textMode = !reader.textMode;
+  reader.layout++;
+  reader.io?.disconnect();
+  const button = document.querySelector('[data-text-mode]');
+  button.setAttribute('aria-pressed', String(reader.textMode));
+  button.textContent = reader.textMode ? 'Page view' : 'Text view';
+  if (reader.textMode) void paintPdfTextPage(); else void layoutPages();
+}
 function readerFilter() { return state.readerDark ? 'invert(0.88) hue-rotate(180deg) brightness(0.95) contrast(0.9)' : 'none'; }
 function applyReaderFilter() { const el = document.querySelector('#pdf-reader'); if (el) { el.style.setProperty('--pdf-filter', readerFilter()); el.dataset.dark = state.readerDark ? '1' : '0'; } }
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
@@ -256,11 +297,11 @@ function setZoom(dir) {
   const i = ZOOMS.reduce((best, z, k) => Math.abs(z - state.readerZoom) < Math.abs(ZOOMS[best] - state.readerZoom) ? k : best, 0);
   const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + dir))];
   if (next === state.readerZoom) return;
-  state.readerZoom = next; localStorage.setItem('librarian.readerZoom', next);
+  state.readerZoom = next; writePreference('librarian.readerZoom', next);
   const out = document.querySelector('.zoom-val'); if (out) out.textContent = `${Math.round(next * 100)}%`;
-  if (state.reader?.text) paintTextPage(); else void layoutPages();
+  if (state.reader?.text) paintTextPage(); else if (state.reader?.textMode) void paintPdfTextPage(); else void layoutPages();
 }
-function toggleReaderDark() { state.readerDark = !state.readerDark; localStorage.setItem('librarian.readerDark', state.readerDark ? '1' : '0'); const btn = document.querySelector('[data-dark-toggle]'); if (btn) { btn.classList.toggle('active', state.readerDark); btn.innerHTML = `${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}`; } applyReaderFilter(); }
+function toggleReaderDark() { state.readerDark = !state.readerDark; writePreference('librarian.readerDark', state.readerDark ? '1' : '0'); const btn = document.querySelector('[data-dark-toggle]'); if (btn) { btn.classList.toggle('active', state.readerDark); btn.innerHTML = `${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}`; } applyReaderFilter(); }
 async function paintReader() {
   const box = document.querySelector('#pdf-pages'); if (!box || state.reader.painted) return;
   const reader = state.reader;
@@ -290,16 +331,17 @@ async function paintReader() {
       width = box.clientWidth; void layoutPages();
     });
     reader.resizeObserver.observe(box);
-  } catch (e) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">Could not open this PDF.</p>'; }
+  } catch (e) { if (box.isConnected) box.innerHTML = `<p class="reader-msg">${e?.name === 'PasswordException' ? 'This PDF is password-protected. Import an unlocked copy to read it here.' : 'Could not open this PDF. Your saved copy is unchanged; close the reader and export it or try another file.'}</p>`; }
 }
 
 // Builds the page slots at the current zoom. Re-run on zoom change (no re-parse).
 async function layoutPages() {
   const reader = state.reader, box = document.querySelector('#pdf-pages'), pdf = reader?.pdf;
-  if (!box || !pdf) return;
+  if (!box || !pdf || reader.textMode) return;
   const generation = ++reader.layout;
   reader.io?.disconnect();
-  const first = await pdf.getPage(1);
+  let first;
+  try { first = await pdf.getPage(1); } catch { return; }
   if (state.reader !== reader || generation !== reader.layout || !box.isConnected) return;
   const unit = (Math.min(box.clientWidth - 40, 900) / first.getViewport({ scale: 1 }).width) * state.readerZoom;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -311,7 +353,9 @@ async function layoutPages() {
     if (rendered.has(n)) return; rendered.add(n);
     try {
       const page = await pdf.getPage(n); if (!valid()) return;
-      const vp = page.getViewport({ scale: Math.min(unit * dpr, 4) });
+      const dimensions = page.getViewport({ scale: 1 });
+      const pixelLimit = Math.sqrt(4000000 / (dimensions.width * dimensions.height));
+      const vp = page.getViewport({ scale: Math.min(unit * dpr, 4, pixelLimit) });
       const canvas = document.createElement('canvas');
       canvas.className = 'pdf-page'; canvas.width = vp.width; canvas.height = vp.height;
       canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', `Page ${n}`);
@@ -345,7 +389,7 @@ async function layoutPages() {
       const edge = box.getBoundingClientRect().top + Math.min(100, box.clientHeight / 3);
       const slots = [...box.children];
       const slot = slots.find(slot => slot.getBoundingClientRect().bottom > edge);
-      if (slot && +slot.dataset.page !== reader.page) recordPage(+slot.dataset.page);
+      if (slot?.dataset.page && +slot.dataset.page !== reader.page) recordPage(+slot.dataset.page);
     });
   };
   goToPage(reader.page);
@@ -369,7 +413,7 @@ function category(book) {
 function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return 'free'; if (/preview|sale/i.test(av)) return 'preview'; return 'catalog'; }
 function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
-function coverInner(b, cls = 'book') { return b.cover ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
+function coverInner(b, cls = 'book') { return externalURL(b.cover) ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
 const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF', 'DNB': 'DNB', 'Finna': 'FIN', 'Nasjonalbiblioteket': 'NB' };
 function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
 function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
@@ -394,6 +438,7 @@ async function text(url) { const c = new AbortController(); const t = setTimeout
 
 async function openLibrary(q) {
   const settled = await Promise.allSettled(OPEN_LIBRARY_OFFSETS.map(offset => json(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=100&offset=${offset}&fields=key,title,author_name,first_publish_year,publish_year,isbn,language,subject,cover_i,edition_count,ia,ebook_access,ratings_average,number_of_pages_median`)));
+  if (settled.every(r => r.status === 'rejected')) throw new Error('Open Library is temporarily unavailable');
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.docs || []) : []).map(d => ({
     id: `ol:${d.key}`, work: /^\/works\//.test(d.key || '') ? d.key : '', title: d.title, authors: uniq(d.author_name).slice(0, 4), year: d.first_publish_year || '', pages: d.number_of_pages_median || '', subjects: uniq(d.subject).slice(0, 14), langs: uniq(d.language).slice(0, 4), ids: uniq(d.isbn).slice(0, 8),
     cover: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : '',
@@ -406,6 +451,7 @@ async function openLibrary(q) {
 
 async function googleBooks(q) {
   const settled = await Promise.allSettled(GOOGLE_OFFSETS.map(start => json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&startIndex=${start}&printType=books&projection=lite`)));
+  if (settled.every(r => r.status === 'rejected')) throw new Error('Google Books is temporarily unavailable');
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.items || []) : []).map(item => { const v = item.volumeInfo || {}, a = item.accessInfo || {}, s = item.saleInfo || {}; return {
     id: `gb:${item.id}`, title: v.title, authors: uniq(v.authors).slice(0, 4), year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
     cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: compact(v.description || `${v.publisher || 'Publisher metadata'}${v.pageCount ? ` • ${v.pageCount} pages` : ''}.`, 320),
@@ -417,6 +463,17 @@ async function googleBooks(q) {
 async function gutenberg(q) {
   const term = encodeURIComponent(q.replace(/^isbn:/i, '').trim());
   const settled = await Promise.allSettled(GUTENDEX_PAGES.map(page => json(`https://gutendex.com/books?search=${term}&page=${page}`)));
+  if (settled.every(r => r.status === 'rejected')) {
+    if (!NATIVE) throw new Error('Gutenberg discovery is temporarily unavailable');
+    const response = await CapacitorHttp.get({
+      url: `https://www.gutenberg.org/ebooks/search.opds/?query=${term}`,
+      responseType: 'text', connectTimeout: 9500, readTimeout: 11000,
+    });
+    if (response.status !== 200 || typeof response.data !== 'string' || response.data.length > 2_000_000) {
+      throw new Error('Gutenberg discovery is temporarily unavailable');
+    }
+    return parseGutenbergCatalog(response.data);
+  }
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.results || []) : []).map(b => ({
     id: `pg:${b.id}`, title: b.title, authors: uniq((b.authors || []).map(a => a.name)).slice(0, 4), year: '', pages: '', subjects: uniq([...(b.subjects || []), ...(b.bookshelves || [])]).slice(0, 14), langs: uniq(b.languages), ids: [`Project Gutenberg ${b.id}`],
     cover: b.formats?.['image/jpeg'] || '', desc: `Public-domain ebook from Project Gutenberg • ${(b.download_count || 0).toLocaleString()} downloads.`, availability: 'Free public-domain ebook',
@@ -590,7 +647,7 @@ const FETCHERS = {
 function sourceOn(name) { return !state.offSources.includes(name); }
 function toggleSource(name) {
   state.offSources = sourceOn(name) ? [...state.offSources, name] : state.offSources.filter(n => n !== name);
-  localStorage.setItem('librarian.offSources', JSON.stringify(state.offSources));
+  writePreference('librarian.offSources', JSON.stringify(state.offSources));
   render();
 }
 // Runs one tier, recording per-source result counts (-1 = failed) for the Sources tab.
@@ -659,7 +716,7 @@ function merge(all, q) {
   for (const b of out) { b.score = score(b); b.held = uniq(b.sources).length; b.rank = relevance(b, toks) + (b.score / 100) * 0.6 + Math.min(b.held - 1, 4) * 0.08; }
   return out.sort((a, b) => b.rank - a.rank || Number(b.year || 0) - Number(a.year || 0));
 }
-function uniqLinks(links) { return links.filter((l, i, a) => l?.url && a.findIndex(x => x.url === l.url) === i); }
+function uniqLinks(links) { return links.filter((l, i, a) => externalURL(l?.url) && a.findIndex(x => x.url === l.url) === i); }
 
 async function search(q) {
   q = String(q || '').trim(); if (!q) return;
@@ -749,7 +806,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}${tab('privacy', 'Help')}</nav></div></header>`;
 }
 
 function hero() {
@@ -770,7 +827,7 @@ function bookCard(b) {
   const meta = [category(b), b.year, b.pages ? `${b.pages} pp` : ''].filter(Boolean).join(' · ');
   const dot = b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low';
   const right = held > 1 ? `<span class="held" title="Found in ${held} catalogs">${ICON.stack} ${held} catalogs</span>` : `<span class="score" title="Metadata completeness"><span class="dot ${dot}"></span>${b.score}%</span>`;
-  return `<article class="book" data-select="${esc(b.id)}">
+  return `<article class="book" tabindex="0" aria-label="Open book details" data-select="${esc(b.id)}">
     <div class="book-cover">${coverInner(b)}</div>
     <div class="book-main">
       <div class="book-tags">${tags}</div>
@@ -853,6 +910,7 @@ function readerOverlay() {
   const r = state.reader; if (!r) return '';
   return `<div class="reader" id="pdf-reader" role="dialog" aria-modal="true" aria-label="Reading ${esc(r.title)}" data-dark="${state.readerDark ? '1' : '0'}" style="--pdf-filter:${readerFilter()}">
     <div class="reader-bar"><span class="reader-title">${esc(r.title)}</span>
+      ${r.format === 'pdf' ? '<button class="reader-dark" data-text-mode aria-pressed="false">Text view</button>' : ''}
       <div class="reader-zoom"><button data-zoom="-1" aria-label="Zoom out">&minus;</button><span class="zoom-val">${Math.round(state.readerZoom * 100)}%</span><button data-zoom="1" aria-label="Zoom in">+</button></div>
       <button class="reader-dark ${state.readerDark ? 'active' : ''}" data-dark-toggle>${state.readerDark ? ICON.sun : ICON.moon} ${state.readerDark ? 'Light' : 'Dark'}</button>
       <button class="reader-close" data-reader-close aria-label="Close reader">${ICON.x}</button></div>
@@ -879,7 +937,7 @@ function sourcesTab() {
   };
   return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Source control</p><h2>${onCount} of ${live.length} catalogs enabled.</h2><p>${summary}</p></div>
       <div class="src-bulk"><button data-src-all="on">Enable all</button><button data-src-all="fast">Fast only</button></div></div>
-    <div class="sources">${SOURCES.map(s => `<article class="${s.live && !sourceOn(s.name) ? 'is-off' : ''}"><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? `<label class="src-toggle" title="${sourceOn(s.name) ? 'Searching this catalog' : 'Skipping this catalog'}"><input type="checkbox" data-src="${esc(s.name)}" ${sourceOn(s.name) ? 'checked' : ''} /><span class="switch"></span></label>` : '<span class="priority">roadmap</span>'}</div><h3>${esc(s.name)}</h3><div class="src-line"><span class="src-role">${esc(s.priority)}</span>${s.live ? statOf(s) : ''}</div><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
+    <div class="sources">${SOURCES.filter(s => s.live || s.name === "WorldCat").map(s => `<article class="${s.live && !sourceOn(s.name) ? 'is-off' : ''}"><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? `<label class="src-toggle" title="${sourceOn(s.name) ? 'Searching this catalog' : 'Skipping this catalog'}"><input type="checkbox" data-src="${esc(s.name)}" ${sourceOn(s.name) ? 'checked' : ''} /><span class="switch"></span></label>` : '<span class="priority">Library lookup</span>'}</div><h3>${esc(s.name)}</h3><div class="src-line"><span class="src-role">${esc(s.priority)}</span>${s.live ? statOf(s) : ''}</div><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
     <div class="suggest-box" style="margin-top:44px">
       <div class="titles"><p class="eyebrow">Missing something?</p><h2>Suggest a source.</h2><p>Know an open catalog, national library, or book API Librarian should federate? Name it (and a link if you have one) and it goes straight to the project’s issue tracker.</p></div>
       <form class="suggest-form" data-suggest-form>
@@ -899,7 +957,7 @@ function profileTab() {
     ${state.saved.length ? `<div class="shelf">${state.saved.map(savedCard).join('')}</div>` : '<p class="notice">No saved books yet. Head to Search and tap the bookmark on any result.</p>'}</div></section>`;
 }
 function savedCard(b) {
-  return `<article class="saved" data-select="${esc(b.id)}"><div class="book-cover">${coverInner(b)}</div><div class="saved-body"><span class="cat">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span class="author">${esc(b.authors?.[0] || 'Unknown author')}</span></div><button class="saved-remove" data-remove="${esc(b.id)}" aria-label="Remove from shelf">${ICON.trash}</button></article>`;
+  return `<article class="saved" tabindex="0" aria-label="Open saved book details" data-select="${esc(b.id)}"><div class="book-cover">${coverInner(b)}</div><div class="saved-body"><span class="cat">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span class="author">${esc(b.authors?.[0] || 'Unknown author')}</span></div><button class="saved-remove" data-remove="${esc(b.id)}" aria-label="Remove from shelf">${ICON.trash}</button></article>`;
 }
 
 function modal() {
@@ -934,6 +992,7 @@ function modal() {
 
 function activeTab() {
   // AI Librarian temporarily hidden — keep aiTab() defined for easy re-enable.
+  if (state.tab === 'privacy') return privacySection();
   if (state.tab === 'library') return libraryTab();
   if (state.tab === 'sources') return sourcesTab();
   if (state.tab === 'profile') return profileTab();
@@ -954,6 +1013,7 @@ function bind() {
   document.querySelectorAll('[data-save]').forEach(el => el.onclick = e => { e.stopPropagation(); toggleSave(el.dataset.save); });
   document.querySelectorAll('[data-remove]').forEach(el => el.onclick = e => { e.stopPropagation(); remove(el.dataset.remove); });
   document.querySelectorAll('[data-select]').forEach(el => el.onclick = () => { state.selected = state.results.find(b => b.id === el.dataset.select) || state.saved.find(b => b.id === el.dataset.select); render(); });
+  document.querySelectorAll('[data-select]').forEach(el => el.onkeydown = event => { if (event.target === el && ['Enter', ' '].includes(event.key)) { event.preventDefault(); el.click(); } });
   const bd = document.querySelector('.backdrop');
   if (bd) bd.onclick = e => { if (e.target === bd || e.target.closest('.modal-close')) { state.selected = null; render(); } };
   document.querySelectorAll('[data-editions]').forEach(el => el.onclick = e => { e.stopPropagation(); loadEditions(el.dataset.editions, el); });
@@ -973,12 +1033,13 @@ function bind() {
   document.querySelector('[data-bookmark-page]')?.addEventListener('click', bookmarkPage);
   document.querySelector('[data-bookmark-jump]')?.addEventListener('change', event => { if (event.target.value) goToPage(event.target.value); });
   document.querySelector('[data-reader-close]')?.addEventListener('click', closeReader);
+  document.querySelector('[data-text-mode]')?.addEventListener('click', togglePdfText);
   document.querySelectorAll('[data-zoom]').forEach(el => el.onclick = () => setZoom(+el.dataset.zoom));
   document.querySelectorAll('[data-src]').forEach(el => el.onchange = () => toggleSource(el.dataset.src));
   document.querySelector('[data-suggest-form]')?.addEventListener('submit', e => { e.preventDefault(); submitSuggestion(new FormData(e.currentTarget).get('src')); e.currentTarget.reset(); });
   document.querySelectorAll('[data-src-all]').forEach(el => el.onclick = () => {
     state.offSources = el.dataset.srcAll === 'fast' ? Object.entries(FETCHERS).filter(([, v]) => v.tier === 'slow').map(([n]) => n) : [];
-    localStorage.setItem('librarian.offSources', JSON.stringify(state.offSources)); render();
+    writePreference('librarian.offSources', JSON.stringify(state.offSources)); render();
   });
   document.querySelector('[data-dark-toggle]')?.addEventListener('click', toggleReaderDark);
   const drop = document.querySelector('[data-import-label]');
@@ -1012,11 +1073,11 @@ let deferredInstall = null;
 const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 function installBanner(inner) {
-  if (NATIVE || isStandalone() || localStorage.getItem('librarian.installDismissed') === '1' || document.querySelector('.install-banner')) return;
+  if (NATIVE || isStandalone() || readPreference('librarian.installDismissed', '0') === '1' || document.querySelector('.install-banner')) return;
   const el = document.createElement('div'); el.className = 'install-banner';
   el.innerHTML = `${inner}<button class="install-x" aria-label="Dismiss">${ICON.x}</button>`;
   document.body.appendChild(el);
-  el.querySelector('.install-x').onclick = () => { el.remove(); localStorage.setItem('librarian.installDismissed', '1'); };
+  el.querySelector('.install-x').onclick = () => { el.remove(); writePreference('librarian.installDismissed', '1'); };
   el.querySelector('[data-install]')?.addEventListener('click', async () => { if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; } el.remove(); });
 }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; installBanner('<span>Install <strong>Librarian</strong> as an app.</span><button class="btn-primary" data-install>Install</button>'); });
