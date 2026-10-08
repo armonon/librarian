@@ -86,4 +86,9 @@ Other Diagnostic Data, linked to users for App Functionality, not tracking.
 Build 4 is archived and tested with Google Books attribution/order fixes and
 clearer bundled privacy text. Owner Xcode sign-in resolved signing; build 4's
 verified IPA uploaded at 18:00 PDT, finished Apple processing, and replaced build 3
-on version 1.0. Build 4 remains Missing Compliance. App Review notes now disclose operational hosting logs. No public release.
+on version 1.0. Build 4 export compliance is now saved. App Review notes now disclose operational hosting logs. No public release.
+
+Owner approved excluding France and China mainland on October 7. Both regions
+show Not Available; price remains free in the 173 remaining launch regions.
+Standard algorithms outside Apple OS / no France answers cleared export
+validation. Only Content Rights remains in the latest Add for Review check.

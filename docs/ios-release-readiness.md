@@ -4,8 +4,8 @@
 App Store Connect record `6819934484`, **Librarian: Books & PDFs**, remains Prepare
 for Submission. After owner Xcode sign-in, build 4 exported successfully, passed
 strict recursive signature verification, and uploaded at 18:00 PDT on October 7.
-Apple processing completed and build 4 replaced build 3 on version 1.0. Its status
-is Missing Compliance. No App Review submission or public release has occurred.
+Apple processing completed and build 4 replaced build 3 on version 1.0. Its export-compliance
+validation is cleared. No App Review submission or public release has occurred.
 
 ## Build 4 follow-up — October 7
 
@@ -25,8 +25,9 @@ is Missing Compliance. No App Review submission or public release has occurred.
   logs remain in the ignored folder.
 - App Review notes now explicitly describe operational hosting logs and
   distinguish them from behavioral analytics.
-- App Privacy is published. A fresh Apple validation now lists only export
-  compliance and Content Rights. Age ratings remain saved.
+- App Privacy is published. A fresh Apple validation now lists only
+  Content Rights after the approved region exclusions and export answers.
+  Age ratings remain saved.
 
 ## Uploaded build 3 evidence
 
@@ -89,8 +90,9 @@ needs physical-device testing.
   review notes, copyright and owner-supplied review contact.
 - Native iPhone 17 Pro screenshot (1206 × 2622) and 13-inch iPad screenshot
   (2064 × 2752), accepted by App Store Connect.
-- Free price in all 175 countries/regions; availability includes future
-  storefronts, effective on release. Automatic release after approval selected.
+- Free price retained. Owner approved excluding France and China mainland:
+  173 launch regions remain, with both excluded regions verified Not Available.
+  Future storefront setting and automatic release after approval remain selected.
 
 ## Remaining gates and next actions
 
@@ -100,19 +102,16 @@ needs physical-device testing.
    Do not infer worldwide copyright permission from US public-domain status.
 2. **Completed signing/privacy:** build 4 is signed, uploaded, processed and
    attached. App Privacy is published based on verified hosting logs.
-3. **Export compliance — owner:** PDF.js bundles AES/RC4 implementations. Apple's
-   standard-encryption questionnaire with France selected explicitly requires
-   export documentation for review. Supply applicable documentation or establish
-   the correct exemption with Apple; no unsupported exemption was declared.
-4. **Worldwide regulatory eligibility — owner:** App Store Connect flags missing
-   EU DSA trader information and China mainland publication permits. Determine
-   applicable registrations/permits; selecting all storefronts is not approval.
+3. **Completed export questionnaire:** standard PDF.js encryption outside Apple
+   OS declared; France distribution answered No after the owner-approved exclusion.
+   Apple validation no longer lists export compliance. No exemption flag invented.
+4. **Regional eligibility:** China mainland is excluded as approved; no publication
+   permit was asserted. EU DSA trader information still requires owner resolution.
 5. **Physical qualification — devices needed:** iPhone 16 was unavailable to
    devicectl; no physical iPad connected. Test local/iCloud Files import, native
    Save to Files, offline cold launch, force-quit/reopen, rotation, background
    recovery, mixed/large PDFs, low storage, VoiceOver and text sizing on both.
-6. **Final submission:** build 4 is processed and attached. Resolve its Missing
-   Compliance state, review Apple's validation and submit for App Review only
+6. **Final submission:** build 4 is processed and attached. Resolve Content Rights, review Apple's validation and submit for App Review only
    after the above gates. No public release has occurred.
 
 ## Scope limits

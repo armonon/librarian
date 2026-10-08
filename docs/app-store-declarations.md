@@ -3,15 +3,14 @@
 Prepared from the release source and Apple validation on October 6, 2026.
 This worksheet is technical evidence, not an approved legal classification or
 an assertion that third-party rights have been obtained. Age ratings and App Privacy were published on October 7, 2026.
-Content rights and export compliance remain unresolved. App Review notes have been updated
+Content rights remains unresolved; build 4 export compliance is saved. App Review notes have been updated
 with the owner-confirmed product purpose and absence of analytics.
 
 ## Current Apple validation
 
-The Add for Review check rejects submission for these two items after publishing App Privacy on October 7:
-
-1. Content Rights Information is missing.
-2. Build 4 lacks export compliance information.
+After owner-approved exclusion of France and China mainland on October 7, the
+Add for Review check lists only Content Rights Information. Build 4 export
+answers are saved: standard algorithms outside Apple OS; no France distribution.
 
 Screenshots, copyright and review-contact information are no longer listed as
 validation errors. Worldwide regional eligibility and real-device qualification
@@ -34,9 +33,10 @@ node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs (classes at lines 63860,
 
 App Store Connect's standard-encryption answer with France selected required
 export documentation. No exemption flag or Apple approval code was invented.
-Owner action: provide the applicable existing documentation or obtain a
-classification/exemption determination. Apple says classification responsibility
-belongs to the developer; ANSSI provides the French declaration process.
+The owner subsequently approved excluding France and China mainland. Both now
+show Not Available. With standard algorithms selected and France answered No,
+Apple accepted build 4 export answers and removed its compliance blocker. No
+Info.plist exemption flag was added; revisit the declaration before adding France.
 
 - https://developer.apple.com/help/app-store-connect/manage-app-information/overview-of-export-compliance/
 - https://cyber.gouv.fr/reglementation/reglementation-identite-confiance-numerique/controles-reglementaires-cryptographie/controle-moyen-de-cryptologie/
