@@ -43,8 +43,9 @@ declaration was submitted. See app-store-declarations.md for the answers.
 ## Current operational blocker
 
 App Store Connect access was restored and the age rating was saved. App Privacy was subsequently published using verified Netlify logging evidence. Content
-rights, export documentation, regional availability and physical-device qualification
-remain as documented in app-store-declarations.md.
+rights and physical-device qualification remain open. France and China mainland
+were excluded with owner approval, and build 4 export compliance is now saved.
+The latest Apple validation lists Content Rights Information only.
 
 ## Further findings and build 4 changes
 
@@ -61,3 +62,29 @@ calling an app a hobby. Verify the existing API account's entitlement. The FAQ
 also requests attribution and project information. No email has been sent or
 new terms accepted. Cover/full-text permissions still depend on the item and
 territory. These outstanding points prevent a blanket content-rights assertion.
+
+## Concrete implementation gaps verified after build 4
+
+- `src/main.js` `toggleSave`/`persist` stores entire Google Books records in
+  localStorage with no expiry. [Google API terms, section 5](https://developers.google.com/terms/)
+  restrict permanent copies and caching beyond permitted cache headers absent
+  separate permission. Keep shelf references and fetch current authorized metadata;
+  do not treat a branding fix as resolving storage obligations.
+- `gutenberg()` labels every Gutendex result public domain without checking its
+  copyright field. `src/reading.js` `readableLink` enables a text download for any
+  Gutenberg ebook URL and a PDF download based on URL/label, without a license
+  predicate. [Gutenberg permission guidance](https://www.gutenberg.org/policy/permission)
+  distinguishes US public-domain works from copyrighted permission-based editions
+  and explicitly does not establish non-US redistribution rights.
+- CORE's [FAQ](https://core.ac.uk/faq) confirms keyless rate-limited access exists,
+  but the current authenticated proxy's entitlement remains unverified. An existing
+  key must not be treated as evidence of an applicable license.
+
+Proposed next candidate, pending owner choice: retain broad bibliographic search
+and personal imported-PDF reading; restrict app-provided images, descriptions and
+full-text downloads to documented permissions, and keep source landing-page links
+for other content. Providers without established API entitlement would need a
+verified entitlement or be omitted from in-app aggregation. This changes the
+current product's content/download coverage, so the owner has been asked to choose
+this route or supply the missing license information. No blanket Content Rights
+assertion has been saved and no App Review submission has occurred.
