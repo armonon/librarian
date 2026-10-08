@@ -3,13 +3,13 @@
 Prepared from the release source and Apple validation on October 6, 2026.
 This worksheet is technical evidence, not an approved legal classification or
 an assertion that third-party rights have been obtained. Age ratings and App Privacy were published on October 7, 2026.
-Content rights remains unresolved; build 4 export compliance is saved. App Review notes have been updated
+Content rights remains unresolved; build 6 export compliance is saved. App Review notes have been updated
 with the owner-confirmed product purpose and absence of analytics.
 
 ## Current Apple validation
 
 After owner-approved exclusion of France and China mainland on October 7, the
-Add for Review check lists only Content Rights Information. Build 4 export
+Add for Review check lists only Content Rights Information. Build 6 export
 answers are saved: standard algorithms outside Apple OS; no France distribution.
 
 Screenshots, copyright and review-contact information are no longer listed as
@@ -175,3 +175,6 @@ revalidation and Google shelf reference migration. All search providers and
 existing previews/descriptions remain, so their independent permissions and API
 entitlements are not certified. Repeat export answers on the replacement build
 (standard algorithms outside Apple OS; France unavailable).
+
+Build 6 has now processed and replaced build 4 on version 1.0. Export answers
+are saved; the latest submission validation lists Content Rights only.

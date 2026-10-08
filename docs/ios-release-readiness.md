@@ -1,8 +1,8 @@
 # Librarian 1.0 (6) candidate — release readiness, October 7, 2026
 
-**Decision: build 6 tested, signed and uploaded; Apple processing pending. Content Rights remains unresolved.**
-Build 4 is currently attached to version 1.0, with export compliance cleared.
-The replacement preserves all search providers and limits direct downloads.
+**Decision: build 6 tested, signed, uploaded, processed and attached. Content Rights remains unresolved.**
+Build 6 is attached to version 1.0, with export compliance cleared.
+The release preserves all search providers and limits direct downloads.
 No App Review submission or public release has occurred.
 
 ## Build 6 follow-up
@@ -127,7 +127,7 @@ needs physical-device testing.
    catalogs/content in launch territories. Age ratings are saved: 16+ globally
    on current operating systems, 17+ before version 26, with regional exceptions.
    Do not infer worldwide copyright permission from US public-domain status.
-2. **Completed signing/privacy:** build 4 is signed, uploaded, processed and
+2. **Completed signing/privacy:** build 6 is signed, uploaded, processed and
    attached. App Privacy is published based on verified hosting logs.
 3. **Completed export questionnaire:** standard PDF.js encryption outside Apple
    OS declared; France distribution answered No after the owner-approved exclusion.
@@ -138,7 +138,7 @@ needs physical-device testing.
    devicectl; no physical iPad connected. Test local/iCloud Files import, native
    Save to Files, offline cold launch, force-quit/reopen, rotation, background
    recovery, mixed/large PDFs, low storage, VoiceOver and text sizing on both.
-6. **Final submission:** build 4 is processed and attached. Resolve Content Rights, review Apple's validation and submit for App Review only
+6. **Final submission:** build 6 is processed and attached. Resolve Content Rights, review Apple's validation and submit for App Review only
    after the above gates. No public release has occurred.
 
 ## Scope limits
@@ -161,3 +161,13 @@ two blockers: Content Rights and export compliance.
 Broad search remains enabled as requested. See
 [app-store-declarations.md](app-store-declarations.md) for code-backed facts and
 the owner information needed to complete them. No submission was created.
+
+## Final build 6 App Store verification
+
+Build UUID `f4b3ea83-ea1e-481f-bd4c-eeeb6aebe044` finished processing and is saved
+on version 1.0. Export answers were repeated (standard encryption outside Apple
+OS; no France distribution). TestFlight shows Ready to Submit. A fresh version
+validation lists only Content Rights Information. This is not App Review approval
+or a submitted/released version. Store description and review notes reflect the
+CC0 / publisher-verified CC BY 4.0 policy. Proof: ignored
+`releases/ios-1.0-6/release-validation.png`.

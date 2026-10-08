@@ -1,7 +1,7 @@
 # Librarian 1.0 — App Store submission draft
 
 Status: build 6 is the candidate for restricted direct downloads and refreshed
-Google shelf metadata. Build 4 remains attached until the replacement is processed.
+Google shelf metadata. Build 6 is processed and attached; its export compliance is cleared.
 Age ratings and App Privacy are saved. France and China mainland are excluded;
 price remains free. Content Rights remains unresolved. See
 [ios-release-readiness.md](ios-release-readiness.md) for release evidence.
