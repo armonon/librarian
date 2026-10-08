@@ -33,7 +33,7 @@ const SOURCES = [
 ];
 
 const FEATURES = [
-  ['atlas-search', 'Atlas search', 'One query fans out to 15 catalogs — trade, academic, archive, and national libraries — then merges duplicate editions across sources by ISBN and a fuzzy title/author fingerprint.'],
+  ['atlas-search', 'Atlas search', 'Search trade, academic, archive, and national libraries in one place. Google Books has its own results; duplicate editions from other catalogs are grouped together.'],
   ['quality-score', 'Metadata quality score', 'Every result is scored by completeness so the most complete catalog record naturally rises to the top.'],
   ['availability', 'Availability first', 'Filter toward free ebooks, public-domain downloads, previews, borrowable scans, or catalog-only records.'],
   ['stacks', 'Personal stacks', 'Save discoveries into a working shelf for research, shopping, or syllabus building — stored on your device.'],
@@ -398,7 +398,7 @@ function esc(v = '') { return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;'
 function uniq(a = []) { return [...new Set(a.flat().filter(Boolean).map(String))]; }
 function year(v) { return String(v || '').match(/-?\d{3,4}/)?.[0] || ''; }
 function isbn(ids = []) { return ids.find(id => /^97[89]/.test(String(id).replace(/[^0-9X]/gi, ''))) || ids[0] || ''; }
-function key(book) { const i = isbn(book.ids); return i ? `isbn:${i.replace(/[^0-9X]/gi, '').toUpperCase()}` : `${book.title}|${book.authors?.[0] || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+function key(book) { if (book.id?.startsWith('gb:')) return book.id; const i = isbn(book.ids); return i ? `isbn:${i.replace(/[^0-9X]/gi, '').toUpperCase()}` : `${book.title}|${book.authors?.[0] || ''}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
 function compact(text = '', max = 180) { text = Array.isArray(text) ? text.join(', ') : String(text); return text.length > max ? `${text.slice(0, max).trim()}…` : text; }
 function score(book) { return Math.round(([book.title, book.authors?.length, book.cover, book.year, book.subjects?.length, book.ids?.length, book.desc, book.langs?.length, book.links?.length, !/catalog only/i.test(book.availability || '')].filter(Boolean).length / 10) * 100); }
 function titleCase(s = '') { return String(s).replace(/\w\S*/g, w => w.length > 3 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase()).replace(/^./, c => c.toUpperCase()); }
@@ -414,7 +414,7 @@ function availClass(av = '') { if (/free|public|read|borrow/i.test(av)) return '
 function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/read|borrow/i.test(av)) return 'Readable'; if (/preview/i.test(av)) return 'Preview'; if (/sale/i.test(av)) return 'For sale'; return 'Catalog'; }
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
 function coverInner(b, cls = 'book') { return externalURL(b.cover) ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
-const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'GB', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF', 'DNB': 'DNB', 'Finna': 'FIN', 'Nasjonalbiblioteket': 'NB' };
+const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'Google Books', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF', 'DNB': 'DNB', 'Finna': 'FIN', 'Nasjonalbiblioteket': 'NB' };
 function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
 function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
 
@@ -452,11 +452,11 @@ async function openLibrary(q) {
 async function googleBooks(q) {
   const settled = await Promise.allSettled(GOOGLE_OFFSETS.map(start => json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&startIndex=${start}&printType=books&projection=lite`)));
   if (settled.every(r => r.status === 'rejected')) throw new Error('Google Books is temporarily unavailable');
-  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.items || []) : []).map(item => { const v = item.volumeInfo || {}, a = item.accessInfo || {}, s = item.saleInfo || {}; return {
-    id: `gb:${item.id}`, title: v.title, authors: uniq(v.authors).slice(0, 4), year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
-    cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: compact(v.description || `${v.publisher || 'Publisher metadata'}${v.pageCount ? ` • ${v.pageCount} pages` : ''}.`, 320),
-    availability: a.epub?.isAvailable || a.pdf?.isAvailable ? 'Preview / ebook metadata' : s.saleability === 'FOR_SALE' ? 'For sale' : 'Catalog only',
-    links: [...(v.previewLink ? [{ label: 'Google preview', url: v.previewLink }] : []), ...(v.infoLink ? [{ label: 'Google Books', url: v.infoLink }] : [])], sources: ['Google Books']
+  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.items || []) : []).map(item => { const v = item.volumeInfo || {}, s = item.saleInfo || {}; return {
+    id: `gb:${item.id}`, title: v.title, authors: v.authors || [], year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
+    cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: v.description || '',
+    availability: s.saleability === 'FOR_SALE' ? 'For sale' : 'Catalog only',
+    links: [{ label: 'Google Books', url: v.infoLink || `https://books.google.com/books?id=${encodeURIComponent(item.id)}` }], sources: ['Google Books']
   }; });
 }
 
@@ -699,7 +699,9 @@ function combine(a, b) {
     links: uniqLinks([...(a.links || []), ...(b.links || [])]), sources: uniq([a.sources, b.sources]) };
 }
 function merge(all, q) {
-  const recs = all.filter(x => x?.title);
+  // Google Books requires its results to retain their source order and identity.
+  const google = all.filter(x => x?.title && x.sources?.includes('Google Books'));
+  const recs = all.filter(x => x?.title && !x.sources?.includes('Google Books'));
   const parent = recs.map((_, i) => i);
   const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
   const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
@@ -714,7 +716,7 @@ function merge(all, q) {
   const toks = tokenize(q);
   const out = [...groups.values()].map(g => g.reduce(combine));
   for (const b of out) { b.score = score(b); b.held = uniq(b.sources).length; b.rank = relevance(b, toks) + (b.score / 100) * 0.6 + Math.min(b.held - 1, 4) * 0.08; }
-  return out.sort((a, b) => b.rank - a.rank || Number(b.year || 0) - Number(a.year || 0));
+  return out.sort((a, b) => b.rank - a.rank || Number(b.year || 0) - Number(a.year || 0)).concat(google);
 }
 function uniqLinks(links) { return links.filter((l, i, a) => externalURL(l?.url) && a.findIndex(x => x.url === l.url) === i); }
 
@@ -812,6 +814,7 @@ function topbar() {
 function hero() {
   return `<section class="hero"><div class="wrap"><p class="eyebrow">Discover your next read</p><h1>Find a book. Make it yours.</h1><p class="lede">Search across book catalogs and public-domain libraries. Save available full texts for reading here, or keep discoveries on your shelf.</p>
     <form class="search" data-form><div class="search-field">${ICON.search}<input name="q" value="${esc(state.query)}" placeholder="Search title, author, subject, or ISBN…" autocomplete="off" /></div><button class="btn-primary" ${state.loading ? 'disabled' : ''}>${state.loading ? 'Searching…' : 'Search'}</button></form>
+    ${sourceOn('Google Books') ? `<div class="search-attribution">${googleAttribution()}</div>` : ''}
     <div class="samples">${SAMPLES.map(q => `<button data-query="${esc(q)}">${esc(q)}</button>`).join('')}</div></div></section>`;
 }
 
@@ -820,13 +823,21 @@ function features() {
     <div class="features">${FEATURES.map(([, h, p]) => `<article><span class="ico">${ICON.book}</span><h3>${esc(h)}</h3><p>${esc(p)}</p></article>`).join('')}</div></div></section>`;
 }
 
+function googleAttribution() {
+  return '<img class="google-attribution" src="./attribution/powered-by-google.png" alt="Powered by Google" width="62" height="30" />';
+}
+function googleSourceLink(b) {
+  if (!b.sources?.includes('Google Books')) return '';
+  const url = externalURL(b.links?.find(l => l.label === 'Google Books')?.url);
+  return url ? `<a class="google-source-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">View on Google Books ${ICON.ext}</a>` : '';
+}
 function bookCard(b) {
   const saved = state.saved.some(x => key(x) === key(b));
   const srcs = uniq(b.sources), held = b.held || srcs.length;
   const tags = srcs.slice(0, 4).map(s => `<span class="tag">${esc(SRC_TAG[s] || s)}</span>`).join('') + (srcs.length > 4 ? `<span class="tag more">+${srcs.length - 4}</span>` : '');
   const meta = [category(b), b.year, b.pages ? `${b.pages} pp` : ''].filter(Boolean).join(' · ');
   const dot = b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low';
-  const right = held > 1 ? `<span class="held" title="Found in ${held} catalogs">${ICON.stack} ${held} catalogs</span>` : `<span class="score" title="Metadata completeness"><span class="dot ${dot}"></span>${b.score}%</span>`;
+  const right = b.sources?.includes('Google Books') ? '' : held > 1 ? `<span class="held" title="Found in ${held} catalogs">${ICON.stack} ${held} catalogs</span>` : `<span class="score" title="Metadata completeness"><span class="dot ${dot}"></span>${b.score}%</span>`;
   return `<article class="book" tabindex="0" aria-label="Open book details" data-select="${esc(b.id)}">
     <div class="book-cover">${coverInner(b)}</div>
     <div class="book-main">
@@ -834,6 +845,7 @@ function bookCard(b) {
       <h3 class="book-title">${esc(b.title)}</h3>
       <p class="book-author">${esc(b.authors?.join(', ') || 'Unknown author')}</p>
       <p class="book-meta">${esc(meta)}</p>
+      ${googleSourceLink(b)}
       <div class="book-foot"><span class="pill ${availClass(b.availability)}">${esc(availLabel(b.availability))}</span>${right}</div>
     </div>
     <button class="book-save ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}" aria-label="${saved ? 'Remove from shelf' : 'Save to shelf'}">${saved ? ICON.bookmarkFill : ICON.bookmark}</button>
@@ -842,8 +854,11 @@ function bookCard(b) {
 
 function resultsSection() {
   const books = filtered();
-  const shown = books.slice(0, state.limit);
-  const head = `<div class="section-head"><div class="titles"><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching the catalogs…' : `${books.length} result${books.length === 1 ? '' : 's'}`}</h2>${!state.loading && state.results.length ? `<p>Merged across ${sourceList().length} source${sourceList().length === 1 ? '' : 's'} and ranked by relevance.${state.loadingMore ? ' <span class="loading-more">searching more catalogs…</span>' : ''}</p>` : ''}</div>
+  const catalogBooks = books.filter(b => !b.sources?.includes('Google Books'));
+  const googleBooks = state.filters.source === 'all' || state.filters.source === 'Google Books' ? state.results.filter(b => b.sources?.includes('Google Books')) : [];
+  const shown = catalogBooks.slice(0, state.limit);
+  const googleShown = googleBooks.slice(0, state.limit);
+  const head = `<div class="section-head"><div class="titles"><p class="eyebrow">Live atlas</p><h2>${state.loading ? 'Searching the catalogs…' : `${catalogBooks.length + googleBooks.length} results`}</h2>${!state.loading && state.results.length ? `<p>Search across ${sourceList().length} source${sourceList().length === 1 ? '' : 's'}. Google Books results appear separately in their original order.${state.loadingMore ? ' <span class="loading-more">searching more catalogs…</span>' : ''}</p>` : ''}</div>
     ${state.results.length ? `<div class="filters">
       <select data-filter="source"><option value="all">All sources</option>${sourceList().map(s => `<option ${state.filters.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
       <select data-filter="availability"><option value="all">All availability</option><option value="free" ${state.filters.availability === 'free' ? 'selected' : ''}>Readable / free</option><option value="preview" ${state.filters.availability === 'preview' ? 'selected' : ''}>Preview / catalog</option></select>
@@ -851,8 +866,8 @@ function resultsSection() {
   let body;
   if (state.loading) body = `<div class="books">${Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join('')}</div>`;
   else if (state.error) body = `<p class="notice">${esc(state.error)}</p>`;
-  else if (!books.length) body = '<p class="notice">No matches after filters. Try widening the lens.</p>';
-  else body = `<div class="books">${shown.map(bookCard).join('')}</div>${books.length > state.limit ? `<button class="show-more" data-more>Show more (${books.length - state.limit} more)</button>` : ''}`;
+  else if (!catalogBooks.length && !googleBooks.length) body = '<p class="notice">No matches after filters. Try widening the lens.</p>';
+  else body = `${googleShown.length ? `<section class="google-results" aria-label="Google Books search results"><div class="catalog-heading"><h3>Google Books search results</h3>${googleAttribution()}</div><p class="catalog-note">Availability and language filters apply to the other catalogs below.</p><div class="books">${googleShown.map(bookCard).join('')}</div></section>` : ''}${shown.length ? `<section aria-label="Other book catalogs">${googleShown.length ? '<h3 class="catalog-heading">Other book catalogs</h3>' : ''}<div class="books">${shown.map(bookCard).join('')}</div></section>` : ''}${catalogBooks.length > state.limit || googleBooks.length > state.limit ? `<button class="show-more" data-more>Show more results</button>` : ''}`;
   return `<section class="section" id="results"><div class="wrap">${head}${body}</div></section>`;
 }
 
@@ -957,7 +972,7 @@ function profileTab() {
     ${state.saved.length ? `<div class="shelf">${state.saved.map(savedCard).join('')}</div>` : '<p class="notice">No saved books yet. Head to Search and tap the bookmark on any result.</p>'}</div></section>`;
 }
 function savedCard(b) {
-  return `<article class="saved" tabindex="0" aria-label="Open saved book details" data-select="${esc(b.id)}"><div class="book-cover">${coverInner(b)}</div><div class="saved-body"><span class="cat">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span class="author">${esc(b.authors?.[0] || 'Unknown author')}</span></div><button class="saved-remove" data-remove="${esc(b.id)}" aria-label="Remove from shelf">${ICON.trash}</button></article>`;
+  return `<article class="saved" tabindex="0" aria-label="Open saved book details" data-select="${esc(b.id)}"><div class="book-cover">${coverInner(b)}</div><div class="saved-body"><span class="cat">${esc(category(b))}</span><strong>${esc(b.title)}</strong><span class="author">${esc(b.authors?.[0] || 'Unknown author')}</span>${b.sources?.includes('Google Books') ? googleAttribution() + googleSourceLink(b) : ''}</div><button class="saved-remove" data-remove="${esc(b.id)}" aria-label="Remove from shelf">${ICON.trash}</button></article>`;
 }
 
 function modal() {
@@ -975,7 +990,8 @@ function modal() {
         <p class="eyebrow">${esc(category(b))}</p>
         <h2>${esc(b.title)}</h2>
         <p class="modal-author">${esc(b.authors?.join(', ') || 'Unknown author')}</p>
-        <div class="modal-row"><span class="pill ${availClass(b.availability)}">${esc(b.availability || 'Catalog only')}</span>${(b.held || 1) > 1 ? `<span class="held">${ICON.stack} in ${b.held} catalogs</span>` : ''}<span class="score"><span class="dot ${b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low'}"></span>${b.score}% complete</span></div>
+        ${b.sources?.includes('Google Books') ? googleAttribution() + googleSourceLink(b) : ''}
+        <div class="modal-row"><span class="pill ${availClass(b.availability)}">${esc(b.availability || 'Catalog only')}</span>${(b.held || 1) > 1 ? `<span class="held">${ICON.stack} in ${b.held} catalogs</span>` : ''}${b.sources?.includes('Google Books') ? '' : `<span class="score"><span class="dot ${b.score >= 85 ? '' : b.score >= 70 ? 'mid' : 'low'}"></span>${b.score}% complete</span>`}</div>
         ${meta ? `<p class="book-meta" style="margin-bottom:18px">${esc(meta)}</p>` : ''}
         ${b.desc ? `<p class="modal-desc">${esc(b.desc)}</p>` : ''}
         ${b.subjects?.length ? `<div class="modal-section"><h4>Subjects</h4><div class="chips" style="display:flex;flex-wrap:wrap;gap:6px">${uniq(b.subjects).slice(0, 10).map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div></div>` : ''}
@@ -1012,7 +1028,7 @@ function bind() {
   document.querySelector('[data-more]')?.addEventListener('click', () => { state.limit += PAGE_SIZE; repaintResults(); });
   document.querySelectorAll('[data-save]').forEach(el => el.onclick = e => { e.stopPropagation(); toggleSave(el.dataset.save); });
   document.querySelectorAll('[data-remove]').forEach(el => el.onclick = e => { e.stopPropagation(); remove(el.dataset.remove); });
-  document.querySelectorAll('[data-select]').forEach(el => el.onclick = () => { state.selected = state.results.find(b => b.id === el.dataset.select) || state.saved.find(b => b.id === el.dataset.select); render(); });
+  document.querySelectorAll('[data-select]').forEach(el => el.onclick = event => { if (event.target.closest('a')) return; state.selected = state.results.find(b => b.id === el.dataset.select) || state.saved.find(b => b.id === el.dataset.select); render(); });
   document.querySelectorAll('[data-select]').forEach(el => el.onkeydown = event => { if (event.target === el && ['Enter', ' '].includes(event.key)) { event.preventDefault(); el.click(); } });
   const bd = document.querySelector('.backdrop');
   if (bd) bd.onclick = e => { if (e.target === bd || e.target.closest('.modal-close')) { state.selected = null; render(); } };

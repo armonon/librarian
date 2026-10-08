@@ -1,18 +1,17 @@
-# App Store declaration worksheet — Librarian 1.0 (3)
+# App Store declaration worksheet — Librarian 1.0 (4) candidate
 
 Prepared from the release source and Apple validation on October 6, 2026.
 This worksheet is technical evidence, not an approved legal classification or
-an assertion that third-party rights have been obtained. The age-rating questionnaire was saved on October 7, 2026. The other
-declarations remain unresolved. App Review notes have been updated
+an assertion that third-party rights have been obtained. Age ratings and App Privacy were published on October 7, 2026.
+Content rights and export compliance remain unresolved. App Review notes have been updated
 with the owner-confirmed product purpose and absence of analytics.
 
 ## Current Apple validation
 
-The Add for Review check rejects submission for these three items after saving age ratings on October 7:
+The Add for Review check rejects submission for these two items after publishing App Privacy on October 7:
 
 1. Content Rights Information is missing.
 2. Build 3 lacks export compliance information.
-3. An Admin must provide App Privacy practices.
 
 Screenshots, copyright and review-contact information are no longer listed as
 validation errors. Worldwide regional eligibility and real-device qualification
@@ -42,7 +41,7 @@ belongs to the developer; ANSSI provides the French declaration process.
 - https://developer.apple.com/help/app-store-connect/manage-app-information/overview-of-export-compliance/
 - https://cyber.gouv.fr/reglementation/reglementation-identite-confiance-numerique/controles-reglementaires-cryptographie/controle-moyen-de-cryptologie/
 
-## Privacy facts and unresolved retention
+## Privacy declaration published — October 7, 2026
 
 | Operation | Data path | Verified from source |
 | --- | --- | --- |
@@ -54,15 +53,34 @@ belongs to the developer; ANSSI provides the French declaration process.
 | Export | iOS share destination chosen by user | A copy is passed to the selected destination. |
 | Support | External company support website | Its processing needs to be included where applicable. |
 
-The proxy source has no explicit console logging or analytics calls. It sets
-public response caching for 600 seconds. These facts do not establish Netlify
-access-log retention, account analytics settings, third-party provider retention,
-or whether data is linked to users. Do not select Data Not Collected solely
-because the local library stays on-device.
+Direct inspection of the production `librarian-atlas` Netlify dashboard confirmed:
 
-Owner/hosting administrator must establish retention, purposes, identity linkage,
-and tracking practices for search/request data before the privacy label is saved.
-The iOS required-reason manifest for file timestamps is separate from that label.
+- Web Analytics is not enabled (the dashboard offers Enable Analytics).
+- Observability exposes a seven-day request-history window. Actual proxy requests
+  from earlier days retain complete search-query URLs, client IP, approximate
+  country/region, user-agent, response status, response size and request duration.
+- The security dashboard reports no connected log drain.
+
+This is collection under Apple's definition, despite no analytics SDK. The
+published label declares Coarse Location, Search History, Performance Data and
+Other Diagnostic Data. All are used for App Functionality, linked to users
+because IP information is retained, and not used for tracking. IP-based
+operational diagnostics are classified by their use, as Apple's guidance directs;
+no IDFA, account ID or app-generated device identifier is implemented.
+
+The label was published after the owner said to continue at Apple's final
+publication confirmation. App Store Connect displays Published; a fresh Add for
+Review check no longer lists App Privacy. Build 4's bundled Help text explains
+the operational logs. Local PDFs and reading progress are not collected. The
+seven-day dashboard window is not a guarantee that all provider backups or
+upstream services delete data after seven days. No raw client IPs or query logs
+are committed here.
+
+Evidence: `releases/ios-1.0-3/privacy-published.png` and
+`releases/ios-1.0-4/submission-after-privacy.png`.
+
+- https://developer.apple.com/app-store/app-privacy-details/
+- https://docs.netlify.com/manage/monitoring/observability/overview/
 
 ## Age rating saved — October 7, 2026
 
@@ -127,8 +145,8 @@ and reported no France encryption or China publication paperwork.
 The current binary has no advertising implementation; future ads require a new
 privacy/age-rating review as applicable. Apple review notes now describe the
 personal search/reader purpose, no current ads or analytics, on-device imported
-files, and catalog/proxy search requests. No Data Not Collected declaration was
-saved: lack of analytics does not resolve request-log retention.
+files, and catalog/proxy search requests. The later hosting inspection above resolved the logging uncertainty and the
+published label discloses the observed collection. Data Not Collected was not selected.
 
 Apple's trader guidance considers advertising, revenue and commercialization
 intent. Because the owner may add ads, hobby status alone was not treated as a

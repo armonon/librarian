@@ -1,6 +1,6 @@
 # Provider rights and age-rating review — October 7, 2026
 
-Scope: release 1.0 (3), with all current search providers enabled. This is an
+Scope: release 1.0 (4) candidate, with all current search providers enabled. This is an
 initial primary-source review, not a blanket clearance of every returned item.
 Public licenses can supply permission without individual letters. The remaining
 work is to verify the app follows those terms and preserves item-level rights.
@@ -8,7 +8,7 @@ work is to verify the app follows those terms and preserves item-level rights.
 | Provider | Evidence found | Remaining check |
 | --- | --- | --- |
 | Open Library | [Licensing](https://openlibrary.org/developers/licensing): Internet Archive asserts no new proprietary rights in the database, but explicitly notes existing rights issues. | Covers and contributed descriptions are not universally cleared by this statement. |
-| Google Books | [API terms](https://developers.google.com/books/terms) allow API use subject to Google's terms; paid app access needs separate permission. | Verify [branding](https://developers.google.com/books/branding), attribution, storage and removal obligations. Current app is free. |
+| Google Books | [API terms](https://developers.google.com/books/terms) allow API use subject to Google's terms; paid app access needs separate permission. | Build 4 corrects [branding](https://developers.google.com/books/branding): separate results retain API order, original authors/descriptions, full source name, bundled official attribution and prominent source links on results/details/shelf. No cross-provider deduplication of Google records. Current app is free. Storage/removal obligations and broader rights still require review. |
 | Gutenberg / Gutendex | [Permission](https://www.gutenberg.org/policy/permission) permits linking without asking; [license](https://www.gutenberg.org/policy/license) governs downloaded editions. | Preserve embedded notices. Non-US copyright status and permission-based editions need attention. Gutendex is a separate metadata intermediary. |
 | OpenAlex | [Official license](https://github.com/ourresearch/openalex-docs/blob/main/license.md) makes OpenAlex data CC0. | Metadata reuse does not grant rights in linked full texts. |
 | Crossref | [REST documentation](https://www.crossref.org/documentation/retrieve-metadata/rest-api/) provides reusable scholarly metadata but warns some abstracts are copyrighted. | The app displays abstracts; do not treat every abstract as CC0. |
@@ -42,7 +42,22 @@ declaration was submitted. See app-store-declarations.md for the answers.
 
 ## Current operational blocker
 
-App Store Connect access was restored and the age rating was saved. Content
-rights, export documentation,
-privacy log practices, regional availability and physical-device qualification
+App Store Connect access was restored and the age rating was saved. App Privacy was subsequently published using verified Netlify logging evidence. Content
+rights, export documentation, regional availability and physical-device qualification
 remain as documented in app-store-declarations.md.
+
+## Further findings and build 4 changes
+
+The Google Books implementation previously used the abbreviation GB and merged
+and reranked its records with other providers. The candidate now isolates those
+records, preserves their order and descriptions, and displays the official
+Powered by Google graphic with direct Google Books links. The general source
+selector can select or exclude the section; language and availability filters
+are explicitly scoped to other catalogs. Broad search and all providers remain.
+
+[CORE's FAQ](https://core.ac.uk/faq) ties higher-rate registered API access to
+license eligibility; its definition of noncommercial use is narrower than simply
+calling an app a hobby. Verify the existing API account's entitlement. The FAQ
+also requests attribution and project information. No email has been sent or
+new terms accepted. Cover/full-text permissions still depend on the item and
+territory. These outstanding points prevent a blanket content-rights assertion.

@@ -414,3 +414,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .library-section .titles h2 { font-size: 2.2rem; }
   .mark-tag { font-size: .58rem; }
 }
+
+/* Keep official attribution legible in light and dark reading-room themes. */
+.google-attribution { display: inline-block; width: 62px; height: 30px; max-width: none; object-fit: contain; background: #fff; flex-shrink: 0; }
+.search-attribution { margin-top: 10px; }
+.catalog-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 24px 0 12px; }
+.catalog-heading h3 { margin: 0; }
+.catalog-note { color: var(--muted); font-size: .85rem; margin-bottom: 18px; }
+.google-results { margin-bottom: 32px; }
+.google-source-link { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; line-height: 1.5; margin: 8px 0; text-decoration: underline; overflow-wrap: anywhere; }
+.google-source-link svg { flex-shrink: 0; width: 14px; height: 14px; }

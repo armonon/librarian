@@ -1,12 +1,32 @@
-# Librarian 1.0 (3) — release readiness, October 7, 2026
+# Librarian 1.0 (4) candidate — release readiness, October 7, 2026
 
-**Decision: technical candidate uploaded; not ready for App Review submission.**
+**Decision: build 4 archived and tested; signing blocked. Not ready for App Review.**
 App Store Connect record `6819934484`, **Librarian: Books & PDFs**, remains Prepare
 for Submission. Build 3 uploaded successfully at 22:18 PDT, finished processing,
 and is attached to version 1.0 with Missing Compliance. This is not an App Review
-approval or a public release.
+approval or a public release. Build 4 contains the attribution/privacy follow-up
+but cannot yet replace build 3: Xcode has no signed-in account and no Apple
+Distribution signing identity. A development identity and Developer ID identity
+are present; neither replaces App Store distribution signing.
 
-## Candidate and evidence
+## Build 4 follow-up — October 7
+
+- Google Books remains enabled with a separate ordered results section, official
+  local attribution graphic, full source name and direct links in results,
+  details and shelf. No merging or reranking Google records across providers.
+- Bundled Help now discloses operational search/IP/approximate-location/diagnostic
+  logging verified in production Netlify, while local files remain on-device.
+- 34 unit tests and 15 WebKit checks passed across small iPhone, iPhone and iPad.
+  A final focused attribution rerun passed on all three layouts.
+- Xcode 26.2 Release device archive succeeded:
+  `releases/ios-1.0-4/Librarian-unsigned.xcarchive`.
+- Distribution export failed with No Accounts / no iOS Distribution certificate.
+  Xcode Settings > Apple Accounts was opened for owner sign-in. Do not treat the
+  unsigned archive as distributable. Build 4 is not uploaded or attached yet.
+- App Privacy is published. A fresh Apple validation now lists only export
+  compliance and Content Rights. Age ratings remain saved.
+
+## Uploaded build 3 evidence
 
 - Bundle `com.armonon.librarian`; version/build `1.0` / `3`; team `NJBZDU7XZX`.
 - Universal iPhone/iPad, iOS/iPadOS 18.0 minimum, Xcode/SDK 26.2.
@@ -76,9 +96,9 @@ needs physical-device testing.
    catalogs/content in launch territories. Age ratings are saved: 16+ globally
    on current operating systems, 17+ before version 26, with regional exceptions.
    Do not infer worldwide copyright permission from US public-domain status.
-2. **App Privacy — owner/hosting administrator:** verify retention of search
-   queries, IPs and request logs, analytics and provider practices, then complete
-   the privacy label. Local PDF storage alone does not imply Data Not Collected.
+2. **Signing and upload — Xcode account needed:** restore Apple Developer sign-in
+   and distribution signing, export/upload build 4 and attach it after processing.
+   App Privacy is already published based on verified hosting logs.
 3. **Export compliance — owner:** PDF.js bundles AES/RC4 implementations. Apple's
    standard-encryption questionnaire with France selected explicitly requires
    export documentation for review. Supply applicable documentation or establish
@@ -90,7 +110,7 @@ needs physical-device testing.
    devicectl; no physical iPad connected. Test local/iCloud Files import, native
    Save to Files, offline cold launch, force-quit/reopen, rotation, background
    recovery, mixed/large PDFs, low storage, VoiceOver and text sizing on both.
-6. **Final submission:** build 3 is processed and attached. Resolve its Missing
+6. **Final submission:** build 3 remains processed and attached; replace with build 4. Resolve its Missing
    Compliance state, review Apple's validation and submit for App Review only
    after the above gates. No public release has occurred.
 
@@ -109,8 +129,8 @@ have not been qualified by this iPhone/iPad release effort.
 
 ## Latest submission validation
 
-After saving the age-rating questionnaire on October 7, a fresh Add for Review
-check returned three blockers: Content Rights, export compliance and App Privacy.
+After publishing App Privacy on October 7, a fresh Add for Review check returned
+two blockers: Content Rights and export compliance.
 Broad search remains enabled as requested. See
 [app-store-declarations.md](app-store-declarations.md) for code-backed facts and
 the owner information needed to complete them. No submission was created.

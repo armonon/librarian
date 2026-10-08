@@ -77,3 +77,12 @@ screenshots should be attached after the physical-device qualification below.
   public-domain content distribution before selecting storefronts.
 - Complete physical-device qualification. Native simulator store screenshots
   have been accepted; automated fixture screenshots are QA evidence only.
+
+## October 7 follow-up
+
+Age rating is saved (16+, 17+ on pre-26 systems, with regional exceptions).
+App Privacy is published: Coarse Location, Search History, Performance Data and
+Other Diagnostic Data, linked to users for App Functionality, not tracking.
+Build 4 is archived and tested with Google Books attribution/order fixes and
+clearer bundled privacy text. Signing is blocked pending Xcode Apple Account
+sign-in/distribution identity; build 3 remains attached. No public release.
