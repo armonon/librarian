@@ -59,5 +59,12 @@
     "@capacitor/filesystem": "^8.1.4",
     "@capacitor/ios": "^8.5.2",
     "@capacitor/share": "^8.0.3"
+  },
+  "overrides": {
+    "@capacitor/assets": {
+      "sharp": "0.35.5"
+    },
+    "http-cache-semantics": "4.3.0",
+    "@capacitor/cli": "$@capacitor/cli"
   }
 }
