@@ -171,3 +171,16 @@ validation lists only Content Rights Information. This is not App Review approva
 or a submitted/released version. Store description and review notes reflect the
 CC0 / publisher-verified CC BY 4.0 policy. Proof: ignored
 `releases/ios-1.0-6/release-validation.png`.
+
+## Build 7 — Open Library request pacing
+
+The successor candidate includes the shared request-spacing fix from commit
+8872e29. Search retains all five pages, while edition lookups share the same
+1.1-second request gate. There are no additional content removals.
+
+42 unit tests and 18 WebKit browser checks passed before the native version
+increment. The iOS-mode bundle synced successfully. Release archive, automatic
+App Store signing/export, and strict deep signature verification succeeded;
+the signed IPA reports build 7. Evidence is under ignored
+`releases/ios-1.0-7/`. Physical iPhone 16 remains unavailable to devicectl and no
+physical iPad is connected. Those device checks remain outstanding.
