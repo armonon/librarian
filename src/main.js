@@ -1,4 +1,5 @@
 import './styles.css';
+import { spacedRequests } from './request-spacing.js';
 import { CC0, CC_BY, openAlexDownloads, needsPublisherLicense, downloadCredits, shelfRecord } from './catalog-rights.js';
 import { parseGutenbergCatalog } from './gutenberg-catalog.js';
 import { externalURL } from './external-links.js';
@@ -445,7 +446,19 @@ const ICON = {
   moon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
 };
 
-async function json(url, fresh = false) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal, ...(fresh || url.startsWith('https://www.googleapis.com/books/') ? { cache: 'no-store' } : {}) }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
+const openLibraryRequest = spacedRequests();
+async function json(url, fresh = false) {
+  const request = async () => {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 9500);
+    try {
+      const r = await fetch(url, { signal: c.signal, ...(fresh || url.startsWith('https://www.googleapis.com/books/') ? { cache: 'no-store' } : {}) });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      return r.json();
+    } finally { clearTimeout(t); }
+  };
+  return new URL(url, location.href).hostname === 'openlibrary.org' ? openLibraryRequest(request) : request();
+}
 async function text(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 11000); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.text(); } finally { clearTimeout(t); } }
 
 async function openLibrary(q) {

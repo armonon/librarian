@@ -1,13 +1,14 @@
 # Provider rights and age-rating review — October 7, 2026
 
-Scope: release 1.0 (4) candidate, with all current search providers enabled. This is an
-initial primary-source review, not a blanket clearance of every returned item.
+Scope: release 1.0 (6), with all current search providers enabled, plus the
+post-build-6 request-spacing fix described below. This is a continuing
+primary-source review, not a blanket clearance of every returned item.
 Public licenses can supply permission without individual letters. The remaining
 work is to verify the app follows those terms and preserves item-level rights.
 
 | Provider | Evidence found | Remaining check |
 | --- | --- | --- |
-| Open Library | [Licensing](https://openlibrary.org/developers/licensing): Internet Archive asserts no new proprietary rights in the database, but explicitly notes existing rights issues. | Covers and contributed descriptions are not universally cleared by this statement. |
+| Open Library | [API guidance](https://openlibrary.org/developers/api) supports user-driven book discovery; [cover guidelines](https://openlibrary.org/dev/docs/api/covers) expressly support displaying covers using their image URLs. Current cards use CoverID URLs and link to the source. Descriptions are generated from edition counts/ratings, not contributed prose. | Preserve this API usage; no blanket ownership claim is necessary. Post-build-6 code spaces requests to respect the default rate. Registration/application identification remains to review. |
 | Google Books | [API terms](https://developers.google.com/books/terms) allow API use subject to Google's terms; paid app access needs separate permission. | Build 4 corrects [branding](https://developers.google.com/books/branding): separate results retain API order, original authors/descriptions, full source name, bundled official attribution and prominent source links on results/details/shelf. No cross-provider deduplication of Google records. Current app is free. Storage/removal obligations and broader rights still require review. |
 | Gutenberg / Gutendex | [Permission](https://www.gutenberg.org/policy/permission) permits linking without asking; [license](https://www.gutenberg.org/policy/license) governs downloaded editions. | Preserve embedded notices. Non-US copyright status and permission-based editions need attention. Gutendex is a separate metadata intermediary. |
 | OpenAlex | [Official license](https://github.com/ourresearch/openalex-docs/blob/main/license.md) makes OpenAlex data CC0. | Metadata reuse does not grant rights in linked full texts. |
@@ -44,7 +45,7 @@ declaration was submitted. See app-store-declarations.md for the answers.
 
 App Store Connect access was restored and the age rating was saved. App Privacy was subsequently published using verified Netlify logging evidence. Content
 rights and physical-device qualification remain open. France and China mainland
-were excluded with owner approval, and build 4 export compliance is now saved.
+were excluded with owner approval, and build 6 export compliance is now saved.
 The latest Apple validation lists Content Rights Information only.
 
 ## Further findings and build 4 changes
@@ -139,3 +140,40 @@ Original PDFs remain unchanged. The app displays source/license links, saves
 provenance and authors, and includes an attribution text file with native exports.
 Browser exports expose a separate attribution download. This does not resolve
 independent API entitlement or retained preview/abstract permissions.
+
+## Retained discovery review and request pacing — after build 6
+
+Open Library's published cover-use guidance supports the actual image display
+pattern used here. The app uses cover IDs, which the cover documentation exempts
+from its ISBN/OCLC-based image quota. This narrows the earlier open question;
+we should not require individual cover permission letters simply because the
+catalog does not claim ownership of every cover.
+
+Its [API usage guidance](https://openlibrary.org/developers/api) sets a default
+one-request-per-second rate. Search previously launched five pages together.
+The shared request gate now spaces Open Library search pages and edition lookups
+by at least 1.1 seconds. All five pages remain; other providers run independently.
+The HTTP timeout starts after admission, and a late timer after app suspension
+cannot release a queued burst. Failures do not block later requests. This is
+per running app instance, not a promise of a shared quota across devices on one
+network. The change is not part of the already uploaded build 6.
+
+No additional providers, descriptions, covers, reader features or source links
+were removed during this follow-up. The build-6 limitations remain:
+- No automatic Gutenberg text fetching into the reader.
+- Direct PDF saving requires the supported, freshly verified CC0 or CC BY 4.0
+  path; a PDF URL or open-access label alone is insufficient.
+- Google Books shelf entries persist references and refresh details online,
+  rather than retaining permanent offline copies of its metadata.
+
+CORE's current account entitlement is still unknown. Its FAQ distinguishes the
+free rate-limited API from registered higher-rate arrangements; a hobby label or
+an existing API key alone does not settle that distinction. The owner has been
+asked whether a license was granted. No new provider contract or blanket Apple
+Content Rights declaration has been accepted.
+
+Validation for the request-spacing change: 42 unit tests and 18 WebKit browser
+checks passed across small iPhone, iPhone and iPad viewports; the iOS-mode web
+bundle builds successfully. Native archive/upload remains pending. App Store
+Connect was rechecked: build 6 remains attached, Prepare for Submission, with
+Content Rights Information the only listed Add for Review validation error.
