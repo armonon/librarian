@@ -6,6 +6,7 @@ test('Google Books retains source order and attribution across results, details 
     localStorage.setItem('librarian.offSources', JSON.stringify(['Project Gutenberg / Gutendex', 'OpenAlex', 'Crossref', 'Internet Archive', 'CORE', 'DPLA', 'Europeana', 'K10plus', 'Library of Congress', 'BnF', 'DNB', 'Finna', 'Nasjonalbiblioteket']));
   });
   await page.route('https://www.googleapis.com/books/**', route => {
+    if (new URL(route.request().url()).pathname.endsWith('/volumes/first')) return route.fulfill({headers:{'access-control-allow-origin':'*'},json:{id:'first',volumeInfo:{title:'Refreshed title',authors:['First Author']}}});
     const firstPage = new URL(route.request().url()).searchParams.get('startIndex') === '0';
     return route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { items: firstPage ? [
       { id: 'first', volumeInfo: { title: 'An unexpected discovery', authors: ['First Author'], language: 'en', infoLink: 'https://books.google.com/books?id=first', industryIdentifiers: [{ identifier: '9780140328721' }] } },
@@ -36,9 +37,31 @@ test('Google Books retains source order and attribution across results, details 
   await expect(page.locator('.saved')).toHaveCount(1);
   await expect(page.locator('.saved').getByRole('img', { name: 'Powered by Google' })).toBeVisible();
   await expect(page.locator('.saved .google-source-link')).toHaveAttribute('href', 'https://books.google.com/books?id=first');
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('librarian.saved.v1'))[0]);
+  expect(stored.title).toBe('Saved Google Books link');
+  expect(stored.authors).toEqual([]);
+  expect(stored.cover).toBe('');
   await page.reload();
   await page.locator('[data-tab="profile"]').first().click();
   await expect(page.locator('.saved')).toHaveCount(1);
+  await expect(page.locator('.saved')).toContainText('Refreshed title');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: `test-results/${info.project.name}-google-attribution.png`, fullPage: true });
+});
+
+
+test('legacy Google shelf metadata is replaced with references, including offline', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('librarian.installDismissed', '1');
+    localStorage.setItem('librarian.saved.v1', JSON.stringify([{id:'gb:legacy',title:'Old cached title',authors:['Cached author'],desc:'Cached description',cover:'https://images.example/old.jpg',sources:['Google Books']} ]));
+  });
+  await page.route('https://**', route => route.abort());
+  await page.goto('/');
+  await page.locator('[data-tab="profile"]').first().click();
+  await expect(page.locator('.saved')).toContainText('Saved Google Books link');
+  const saved = await page.evaluate(() => localStorage.getItem('librarian.saved.v1'));
+  expect(saved).not.toContain('Old cached title');
+  expect(saved).not.toContain('Cached author');
+  expect(saved).not.toContain('old.jpg');
+  await expect(page.locator('.saved .google-source-link')).toHaveAttribute('href','https://books.google.com/books?id=legacy');
 });

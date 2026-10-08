@@ -1,4 +1,4 @@
-# App Store declaration worksheet — Librarian 1.0 (4) candidate
+# App Store declaration worksheet — Librarian 1.0 (6) candidate
 
 Prepared from the release source and Apple validation on October 6, 2026.
 This worksheet is technical evidence, not an approved legal classification or
@@ -166,3 +166,12 @@ retention and purposes still need verification.
 - https://www.gutenberg.org/policy/permission
 - https://docs.netlify.com/manage/monitoring/observability/overview/
 - https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-european-union-digital-services-act-trader-requirements
+
+## Build 6 follow-up
+
+Owner approved limiting downloads while preserving broad search and other catalog
+features. The candidate implements exact-location CC0 / publisher-verified CC BY 4.0 PDF checks, fresh rights
+revalidation and Google shelf reference migration. All search providers and
+existing previews/descriptions remain, so their independent permissions and API
+entitlements are not certified. Repeat export answers on the replacement build
+(standard algorithms outside Apple OS; France unavailable).

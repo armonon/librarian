@@ -58,31 +58,45 @@ test('import, render, bookmark, resume offline, export and organize a PDF', asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
-test('discover a full-text book, save it once, and read it offline', async ({ page, context }) => {
-  await page.addInitScript(() => localStorage.setItem('librarian.offSources', JSON.stringify(['Open Library', 'Google Books', 'OpenAlex', 'Crossref', 'Internet Archive', 'CORE', 'DPLA', 'Europeana', 'K10plus', 'Library of Congress', 'BnF', 'DNB', 'Finna', 'Nasjonalbiblioteket'])));
-  await page.route('https://gutendex.com/**', route => route.fulfill({ headers: { 'access-control-allow-origin': '*' }, json: { results: [{ id: 1342, title: 'Pride and Prejudice', authors: [{ name: 'Austen, Jane' }], languages: ['en'], formats: {}, subjects: ['Fiction'] }] } }));
-  await page.route('**/.netlify/functions/book-text?id=1342', route => route.fulfill({ contentType: 'text/plain', body: 'Project Gutenberg\n' + 'Elizabeth opened her book.\n'.repeat(500) }));
+test('only licensed exact files can be saved; imported and saved PDFs read offline', async ({ page }, info) => {
+  await page.addInitScript(() => localStorage.setItem('librarian.offSources', JSON.stringify(['Open Library', 'Google Books', 'Project Gutenberg / Gutendex', 'Crossref', 'Internet Archive', 'CORE', 'DPLA', 'Europeana', 'K10plus', 'Library of Congress', 'BnF', 'DNB', 'Finna', 'Nasjonalbiblioteket'])));
+  const work = { doi: 'https://doi.org/10.1234/book', id: 'https://openalex.org/W123', display_name: 'Licensed book', authorships: [{author:{display_name:'Author'}}], locations: [{is_oa:true, license:'cc-by', version:'publishedVersion', pdf_url:'https://files.example/book.pdf', landing_page_url:'https://publisher.example/book'}] };
+  let allowDownload = true;
+  await page.route('https://api.crossref.org/**', route => route.fulfill({headers:{'access-control-allow-origin':'*'},json:{message:{DOI:'10.1234/book',license:[{'content-version':'vor',URL:'https://creativecommons.org/licenses/by/4.0/',start:{timestamp:1}}]}}}));
+  await page.route('https://api.openalex.org/**', route => route.fulfill({headers:{'access-control-allow-origin':'*'}, json: route.request().url().includes('/works/W123') ? {...work, locations: allowDownload ? work.locations : []} : {results:[work, {id:'https://openalex.org/W456',display_name:'Unlicensed book',open_access:{is_oa:true,oa_url:'https://files.example/unlicensed.pdf'}, locations:[{is_oa:true,license:null,pdf_url:'https://files.example/unlicensed.pdf'}]}]}}));
+  let fileRequests = 0;
+  await page.route('https://files.example/**', route => { fileRequests++; return route.fulfill({headers:{'access-control-allow-origin':'*'},contentType:'application/pdf',body:pdfFixture()}); });
   await page.goto('/');
   await page.locator('[data-tab="search"]').first().click();
-  await page.locator('[data-form] input').fill('Pride and Prejudice');
+  await page.locator('[data-form] input').fill('book');
   await page.locator('[data-form] button').click();
-  await page.locator('[data-select]').first().click();
-  await page.locator('[data-read-result]').click();
-  await expect(page.locator('.text-page')).toContainText('Project Gutenberg');
-  await page.locator('[data-page-step="1"]').click();
-  await expect(page.locator('[data-page-number]')).toHaveValue('2');
-  await page.locator('[data-reader-close]').click();
-  await page.locator('[data-select]').first().click();
-  await page.locator('[data-save-pdf]').click();
-  await expect(page.locator('.modal')).toContainText('Already in your Library');
+  await page.locator('[data-select="oa:https://openalex.org/W456"]').click();
+  await expect(page.locator('[data-read-result]')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toContainText('confirmed CC0 or CC BY 4.0 license');
   await page.locator('.modal-close').click();
+  await page.locator('[data-select="oa:https://openalex.org/W123"]').click();
+  await expect(page.locator('[data-read-result]')).toHaveCount(0);
+  await page.locator('[data-check-download]').click();
+  await expect(page.locator('[data-read-result]')).toBeVisible();
+  allowDownload = false;
+  await page.locator('[data-save-pdf]').click();
+  await expect(page.getByRole('dialog')).toContainText('permission is no longer confirmed');
+  expect(fileRequests).toBe(0);
+  allowDownload = true;
+  await page.locator('[data-read-result]').click();
+  await expect(page.locator('.pdf-page').first()).toBeVisible();
+  await page.locator('[data-reader-close]').click();
   await page.locator('[data-tab="library"]').click();
   await expect(page.locator('.pdf-card')).toHaveCount(1);
-  // Bundled app assets remain available, as they do on capacitor://localhost.
+  await expect(page.getByRole('link', {name:'CC BY 4.0 license'})).toHaveAttribute('href','https://creativecommons.org/licenses/by/4.0/');
+  await page.screenshot({path:`test-results/${info.project.name}-licensed-library.png`,fullPage:true});
+  const shared = page.waitForEvent('download');
+  await page.locator('[data-download-pdf]').click();
+  await shared;
+  await expect(page.getByRole('link',{name:'Save attribution'})).toBeVisible();
   await page.route('https://**', route => route.abort());
   await page.locator('.pdf-actions [data-read]').click();
-  await expect(page.locator('.text-page')).toContainText('Elizabeth');
-  await expect(page.locator('[data-page-number]')).toHaveValue('2');
+  await expect(page.locator('.pdf-page').first()).toBeVisible();
 });
 
 test('release recovery, privacy, accessibility, and deliberate removal', async ({ page }) => {

@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { shelfRecord } from '../src/catalog-rights.js';
 
 const source = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 function fixture(mode = 'ok', saved = []) {
   const disk = new Map([['shelf', JSON.stringify(saved)]]);
   const updates = [];
   const state = { saved, tab: 'search', shelfError: '' };
-  const context = vm.createContext({ state, storeKey: 'shelf',
+  const context = vm.createContext({ shelfRecord, state, storeKey: 'shelf',
     localStorage: {
       setItem(key, value) {
         if (mode === 'quota') throw new DOMException('Full', 'QuotaExceededError');

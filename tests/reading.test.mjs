@@ -37,8 +37,8 @@ test('reader clamps invalid pages, validates PDF bytes and preserves text', asyn
 test('only supported full texts receive in-app reading actions', () => {
   assert.equal(readableLink({ links: [{ url: 'https://example.com/preview', label: 'Preview' }] }), null);
   assert.equal(readableLink({ links: [{ url: 'javascript:alert(1)', label: 'PDF' }] }), null);
-  assert.equal(readableLink({ links: [{ url: 'https://example.com/book.pdf' }] }).format, 'pdf');
-  assert.equal(readableLink({ links: [{ url: 'https://www.gutenberg.org/ebooks/1342' }] }).gutenbergId, '1342');
+  assert.equal(readableLink({ links: [{ url: 'https://example.com/book.pdf' }] }), null);
+  assert.equal(readableLink({ links: [{ url: 'https://www.gutenberg.org/ebooks/1342' }] }), null);
 });
 test('Gutenberg endpoint rejects arbitrary targets and upstream HTML', async () => {
   assert.equal((await handler(new Request('https://app.test/?id=https://example.com'))).status, 400);

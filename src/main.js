@@ -1,4 +1,5 @@
 import './styles.css';
+import { CC0, CC_BY, openAlexDownloads, needsPublisherLicense, downloadCredits, shelfRecord } from './catalog-rights.js';
 import { parseGutenbergCatalog } from './gutenberg-catalog.js';
 import { externalURL } from './external-links.js';
 import { fetchPdf, MAX_BOOK_BYTES } from './book-download.js';
@@ -71,10 +72,13 @@ const state = { tab: 'library', libraryQuery: '', libraryFilter: 'all', libraryS
 function loadOffSources() { return readList('librarian.offSources', item => typeof item === 'string'); }
 let searchToken = 0;
 
-function loadSaved() { return readList(storeKey, item => item && typeof item.id === 'string' && typeof item.title === 'string' && ['authors', 'ids', 'sources', 'links', 'subjects', 'langs'].every(field => item[field] === undefined || Array.isArray(item[field]))); }
+function loadSaved() { const loaded = readList(storeKey, item => item && typeof item.id === 'string' && typeof item.title === 'string' && ['authors', 'ids', 'sources', 'links', 'subjects', 'langs'].every(field => item[field] === undefined || Array.isArray(item[field]))); const clean = loaded.map(shelfRecord);
+  if (JSON.stringify(clean) !== JSON.stringify(loaded)) writePreference(storeKey, JSON.stringify(clean));
+  return clean;
+}
 function persist(next) {
   try {
-    const serialized = JSON.stringify(next);
+    const serialized = JSON.stringify(next.map(shelfRecord));
     localStorage.setItem(storeKey, serialized);
     if (localStorage.getItem(storeKey) !== serialized) throw new Error('Shelf write was not confirmed');
   } catch {
@@ -128,15 +132,36 @@ async function downloadPdf(id) {
   try {
     const record = await pdfGet(id);
     const result = meta.format === 'text' ? { blob: record.blob, name: `${meta.title}.txt` } : pdfDownload(record, meta.title);
-    if (await nativeExport(result.blob, result.name)) return;
+    if (await nativeExport(result.blob, result.name, downloadCredits(meta))) return;
     const url = URL.createObjectURL(result.blob);
-    if (readyPdfDownload) URL.revokeObjectURL(readyPdfDownload.url);
-    readyPdfDownload = { url, name: result.name };
+    if (readyPdfDownload) { URL.revokeObjectURL(readyPdfDownload.url); if (readyPdfDownload.creditsUrl) URL.revokeObjectURL(readyPdfDownload.creditsUrl); }
+    const credits = downloadCredits(meta);
+    readyPdfDownload = { url, name: result.name, credits, creditsUrl: credits ? URL.createObjectURL(new Blob([credits], {type:'text/plain'})) : '' };
     state.libError = ''; render();
     document.querySelector('[data-pdf-download-ready]')?.click();
   } catch (error) { state.libError = error.message || 'Could not prepare the PDF download.'; render(); }
 }
 
+async function currentDownloads(workUrl) {
+  if (!/^https:\/\/openalex\.org\/W\d+$/.test(workUrl)) throw new Error('Invalid source record.');
+  const work = await json(workUrl.replace('https://openalex.org/', 'https://api.openalex.org/works/'), true);
+  if (work.id !== workUrl) throw new Error('Source record could not be verified.');
+  let publisher;
+  if (needsPublisherLicense(work)) {
+    const doi = work.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+    publisher = (await json(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, true)).message;
+  }
+  return openAlexDownloads(work, publisher).filter(d => readableLink({ downloads: [d] }));
+}
+async function checkDownloadLicense(book) {
+  if (book._licenseBusy) return;
+  state.selected = { ...book, _licenseBusy: true }; render();
+  try {
+    const downloads = await currentDownloads(book.downloadWork);
+    if (state.selected?.id === book.id) state.selected = { ...book, downloads, _pdfMsg: downloads.length ? 'Download license confirmed. You can now save this edition.' : 'No supported download license could be confirmed. Please use the source links.' };
+  } catch { if (state.selected?.id === book.id) state.selected = { ...book, _pdfMsg: 'The license check is unavailable. Please try again or open the source.' }; }
+  render();
+}
 const savingBooks = new Set();
 async function saveResultPdf(book, read = false) {
   const bookKey = key(book);
@@ -148,26 +173,13 @@ async function saveResultPdf(book, read = false) {
   savingBooks.add(bookKey);
   state.selected = { ...book, _pdfBusy: true }; render();
   try {
-    let blob;
-    if (link.format === 'text') {
-      let text;
-      if (Capacitor.isNativePlatform()) {
-        const response = await CapacitorHttp.get({ url: `https://www.gutenberg.org/cache/epub/${link.gutenbergId}/pg${link.gutenbergId}.txt`, responseType: 'text', readTimeout: 20000, connectTimeout: 15000 });
-        if (response.status !== 200) throw new Error('This edition is unavailable.');
-        text = response.data;
-      } else {
-        const response = await fetch(`${FN_BASE}/.netlify/functions/book-text?id=${link.gutenbergId}`, { signal: AbortSignal.timeout(20000) });
-        if (!response.ok) throw new Error('This edition is unavailable.');
-        text = await response.text();
-      }
-      if (typeof text !== 'string' || !/Project Gutenberg/i.test(text) || /<html/i.test(text.slice(0, 500))) throw new Error('The source did not return a readable book.');
-      blob = new Blob([text], { type: 'text/plain' });
-    } else {
-      blob = await fetchPdf(link.url);
-      await validatePdf(blob);
-    }
+    // Recheck the exact location before fetching, including bookmarks saved in older builds.
+    const verified = (await currentDownloads(link.evidenceUrl)).find(d => d.url === link.url && d.license === link.license);
+    if (!verified) throw new Error('Download permission is no longer confirmed. Please open the source.');
+    const blob = await fetchPdf(link.url);
+    await validatePdf(blob);
     await libraryReady;
-    const metadata = { id: uid(), bookKey, format: link.format, title: book.title || 'Untitled', author: (book.authors || [])[0] || '', cover: book.cover || '', source: (book.sources || [])[0] || 'Web', sourceUrl: link.url, size: blob.size, addedAt: Date.now() };
+    const metadata = { id: uid(), bookKey, format: 'pdf', title: verified.title || book.title || 'Untitled', author: verified.authors.join(', '), cover: '', source: verified.source, sourceUrl: verified.sourceUrl, licenseUrl: verified.license, publisherEvidenceUrl: verified.publisherEvidenceUrl, licenseEvidenceUrl: verified.evidenceUrl, rightsCheckedAt: Date.now(), size: blob.size, addedAt: Date.now() };
     await pdfSave(metadata, blob);
     state.library.unshift(metadata);
     if (state.selected && key(state.selected) === bookKey) state.selected = { ...book, _pdfMsg: 'Saved for offline reading.' };
@@ -433,7 +445,7 @@ const ICON = {
   moon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
 };
 
-async function json(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
+async function json(url, fresh = false) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 9500); try { const r = await fetch(url, { signal: c.signal, ...(fresh || url.startsWith('https://www.googleapis.com/books/') ? { cache: 'no-store' } : {}) }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); } finally { clearTimeout(t); } }
 async function text(url) { const c = new AbortController(); const t = setTimeout(() => c.abort(), 11000); try { const r = await fetch(url, { signal: c.signal }); if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.text(); } finally { clearTimeout(t); } }
 
 async function openLibrary(q) {
@@ -452,12 +464,36 @@ async function openLibrary(q) {
 async function googleBooks(q) {
   const settled = await Promise.allSettled(GOOGLE_OFFSETS.map(start => json(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=40&startIndex=${start}&printType=books&projection=lite`)));
   if (settled.every(r => r.status === 'rejected')) throw new Error('Google Books is temporarily unavailable');
-  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.items || []) : []).map(item => { const v = item.volumeInfo || {}, s = item.saleInfo || {}; return {
-    id: `gb:${item.id}`, title: v.title, authors: v.authors || [], year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
+  return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.items || []) : []).map(googleBook);
+}
+function googleBook(item) {
+  const v = item.volumeInfo || {}, s = item.saleInfo || {};
+  return {
+    id: `gb:${item.id}`, title: v.title || 'Google Books record', authors: v.authors || [], year: year(v.publishedDate), pages: v.pageCount || '', subjects: uniq(v.categories).slice(0, 8), langs: uniq([v.language]), ids: uniq((v.industryIdentifiers || []).map(x => x.identifier)).slice(0, 8),
     cover: (v.imageLinks?.thumbnail || '').replace('http://', 'https://'), desc: v.description || '',
     availability: s.saleability === 'FOR_SALE' ? 'For sale' : 'Catalog only',
     links: [{ label: 'Google Books', url: v.infoLink || `https://books.google.com/books?id=${encodeURIComponent(item.id)}` }], sources: ['Google Books']
-  }; });
+  };
+}
+let googleShelfLoading = false;
+async function refreshGoogleShelf() {
+  if (googleShelfLoading) return;
+  googleShelfLoading = true;
+  try {
+    const pending = state.saved.filter(b => b.googleReference).map(b => b.id);
+    for (let i = 0; i < pending.length; i += 3) {
+      await Promise.all(pending.slice(i, i + 3).map(async id => {
+        try {
+          const item = await json(`https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(id.slice(3))}`);
+          if (`gb:${item.id}` !== id || !item.volumeInfo?.title) return;
+          const book = googleBook(item);
+          state.saved = state.saved.map(b => b.id === id ? book : b);
+          if (state.selected?.id === id) state.selected = book;
+        } catch { /* The saved source link remains usable when metadata is unavailable. */ }
+      }));
+      if (state.tab === 'profile') render();
+    }
+  } finally { googleShelfLoading = false; }
 }
 
 async function gutenberg(q) {
@@ -476,7 +512,7 @@ async function gutenberg(q) {
   }
   return settled.flatMap(r => r.status === 'fulfilled' ? (r.value.results || []) : []).map(b => ({
     id: `pg:${b.id}`, title: b.title, authors: uniq((b.authors || []).map(a => a.name)).slice(0, 4), year: '', pages: '', subjects: uniq([...(b.subjects || []), ...(b.bookshelves || [])]).slice(0, 14), langs: uniq(b.languages), ids: [`Project Gutenberg ${b.id}`],
-    cover: b.formats?.['image/jpeg'] || '', desc: `Public-domain ebook from Project Gutenberg • ${(b.download_count || 0).toLocaleString()} downloads.`, availability: 'Free public-domain ebook',
+    cover: b.formats?.['image/jpeg'] || '', desc: `Project Gutenberg edition • ${(b.download_count || 0).toLocaleString()} downloads. Check the source for copyright and regional availability.`, availability: 'View at source',
     links: [{ label: 'Project Gutenberg', url: `https://www.gutenberg.org/ebooks/${b.id}` }, ...(b.formats?.['text/html'] ? [{ label: 'Read HTML', url: b.formats['text/html'] }] : []), ...(b.formats?.['application/epub+zip'] ? [{ label: 'Download EPUB', url: b.formats['application/epub+zip'] }] : [])], sources: ['Project Gutenberg']
   }));
 }
@@ -493,7 +529,7 @@ async function openAlex(q) {
       desc: abstract ? compact(abstract, 320) : `${titleCase(w.type || 'work')}${loc.source?.display_name ? ` • ${loc.source.display_name}` : ''}${w.cited_by_count ? ` • cited ${w.cited_by_count.toLocaleString()} times` : ''}.`,
       availability: oa.is_oa ? 'Free / open access' : 'Catalog only',
       links: uniqLinks([...(oa.oa_url ? [{ label: 'Open-access full text', url: oa.oa_url }] : []), ...(loc.landing_page_url ? [{ label: 'Publisher page', url: loc.landing_page_url }] : []), ...(doi ? [{ label: 'DOI', url: `https://doi.org/${doi}` }] : []), { label: 'OpenAlex', url: w.id }]),
-      sources: ['OpenAlex']
+      downloadWork: needsPublisherLicense(w) ? w.id : '', downloads: openAlexDownloads(w), sources: ['OpenAlex']
     };
   });
 }
@@ -696,7 +732,7 @@ function combine(a, b) {
     availability: /free|read|borrow|preview/i.test(a.availability) ? a.availability : b.availability,
     authors: dedupeAuthors([...(a.authors || []), ...(b.authors || [])]),
     subjects: uniq([a.subjects, b.subjects]).slice(0, 16), ids: uniq([a.ids, b.ids]), langs: uniq([a.langs, b.langs]),
-    links: uniqLinks([...(a.links || []), ...(b.links || [])]), sources: uniq([a.sources, b.sources]) };
+    downloadWork: a.downloadWork || b.downloadWork, downloads: [...(a.downloads || []), ...(b.downloads || [])], links: uniqLinks([...(a.links || []), ...(b.links || [])]), sources: uniq([a.sources, b.sources]) };
 }
 function merge(all, q) {
   // Google Books requires its results to retain their source order and identity.
@@ -906,6 +942,7 @@ function libraryTab() {
       <strong>${esc(p.title)}</strong>
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
       <span class="reading-state">${p.finished ? 'Finished' : p.lastReadAt ? `Page ${p.page || 1} of ${p.totalPages || '…'}` : 'Ready to read'} · Available offline</span>
+      ${[CC0, CC_BY].includes(p.licenseUrl) ? `<span class="pdf-meta"><a href="${esc(p.sourceUrl)}" target="_blank" rel="noopener noreferrer">Original source</a> · <a href="${esc(p.licenseUrl)}" target="_blank" rel="noopener noreferrer">${p.licenseUrl === CC0 ? 'CC0' : 'CC BY 4.0'} license</a></span>` : ''}
       ${p.totalPages ? `<progress value="${p.finished ? p.totalPages : p.page || 1}" max="${p.totalPages}" aria-label="Reading progress"></progress>` : ''}
       <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} ${p.lastReadAt ? 'Resume' : 'Read'}</button><button data-download-pdf="${esc(p.id)}">${NATIVE ? 'Save / Share' : p.format === 'text' ? 'Download text' : 'Download PDF'}</button><button data-finished="${esc(p.id)}">${p.finished ? 'Mark unread' : 'Mark finished'}</button><button data-del-pdf="${esc(p.id)}" aria-label="Remove ${esc(p.title)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
@@ -913,7 +950,7 @@ function libraryTab() {
       <div class="library-add"><button class="btn-primary" data-import-open>${ICON.upload} Add PDFs</button><input type="file" accept="application/pdf,.pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /><button class="btn-ghost" data-tab="search">Find a book ${ICON.search}</button></div></div>
     ${state.importing ? '<p class="notice" role="status">Adding your PDFs…</p>' : ''}
     ${state.libError ? `<p class="notice" role="alert">${esc(state.libError)}</p>` : ''}
-    ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a></p>` : ''}
+    ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a>${readyPdfDownload.creditsUrl ? ` · <a href="${esc(readyPdfDownload.creditsUrl)}" download="${esc(readyPdfDownload.name)}.attribution.txt">Save attribution</a>` : ''}</p>` : ''}
     ${recent && !state.libraryQuery && state.libraryFilter === 'all' ? `<div class="continue-reading"><div><p class="eyebrow">Continue reading</p><h3>${esc(recent.title)}</h3><p>${esc(recent.author || recent.source)} · Page ${recent.page || 1} of ${recent.totalPages || '…'}</p></div><button class="btn-primary" data-read="${esc(recent.id)}">Pick up where you left off ${ICON.read}</button></div>` : ''}
     <div class="library-tools"><div class="library-filters" role="group" aria-label="Reading status">${[['all', 'All books'], ['reading', 'Reading'], ['unread', 'Unread'], ['finished', 'Finished']].map(([value, label]) => `<button data-library-filter="${value}" aria-pressed="${state.libraryFilter === value}">${label}</button>`).join('')}</div><span class="library-count">${state.library.length} saved</span></div>
     ${state.library.length ? `<div class="library-search-row"><form data-library-search><input type="search" name="query" aria-label="Search your library" placeholder="Search your library…" value="${esc(state.libraryQuery)}" /><button class="btn-ghost">Search</button></form><select data-library-sort aria-label="Sort library"><option value="recent" ${state.librarySort === 'recent' ? 'selected' : ''}>Recently opened</option><option value="title" ${state.librarySort === 'title' ? 'selected' : ''}>Title A–Z</option></select></div>` : ''}
@@ -998,8 +1035,10 @@ function modal() {
         ${ids.length ? `<div class="modal-section"><h4>Identifiers</h4><div class="id-list">${ids.map(i => `<code>${esc(i)}</code>`).join('')}</div></div>` : ''}
         ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
         ${b.work ? `<div class="modal-section"><h4>Editions</h4><button class="btn-ghost" data-editions="${esc(b.work)}">${ICON.stack} Show all editions</button><div class="editions"></div></div>` : ''}
-        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${readableLink(b) ? `<button class="btn-primary" data-read-result ${b._pdfBusy ? 'disabled' : ''}>${b._pdfBusy ? 'Saving…' : 'Read in Librarian'}</button><button class="btn-ghost" data-save-pdf ${b._pdfBusy ? 'disabled' : ''}>Save for offline</button>` : '<p class="ai-note">This catalog record has no supported full-text download. Use its source links for previews, purchases, or borrowing.</p>'}</div>
+        <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${readableLink(b) ? `<button class="btn-primary" data-read-result ${b._pdfBusy ? 'disabled' : ''}>${b._pdfBusy ? 'Saving…' : 'Read in Librarian'}</button><button class="btn-ghost" data-save-pdf ${b._pdfBusy ? 'disabled' : ''}>Save for offline</button>` : '<p class="ai-note">Open the source to read, borrow, or check download options. In-app downloads require a confirmed CC0 or CC BY 4.0 license for this edition. You can also import your own PDFs from Files.</p>'}</div>
         ${state.shelfError ? `<p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p>` : ''}
+        ${b.downloadWork && !readableLink(b) ? `<button class="btn-ghost" data-check-download ${b._licenseBusy ? 'disabled' : ''}>${b._licenseBusy ? 'Checking license…' : 'Check download license'}</button>` : ''}
+        ${readableLink(b) ? `<p class="ai-note">Download license: <a href="${esc(readableLink(b).license)}" target="_blank" rel="noopener noreferrer">${readableLink(b).license === CC0 ? 'CC0' : 'CC BY 4.0'}</a> · <a href="${esc(readableLink(b).sourceUrl)}" target="_blank" rel="noopener noreferrer">Original source</a>. The file’s license is checked again before saving.</p>` : ''}
         ${b._pdfMsg ? `<p class="ai-note" style="margin-top:10px">${esc(b._pdfMsg)}</p>` : ''}
       </div>
     </div>
@@ -1022,7 +1061,7 @@ function bind() {
   document.querySelector('[data-form]')?.addEventListener('submit', e => { e.preventDefault(); search(new FormData(e.currentTarget).get('q')); });
   document.querySelector('[data-ask-form]')?.addEventListener('submit', e => { e.preventDefault(); askLibrarian(new FormData(e.currentTarget).get('ask')); });
   document.querySelectorAll('[data-ask]').forEach(el => el.onclick = () => askLibrarian(el.dataset.ask));
-  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; window.scrollTo({ top: 0 }); render(); });
+  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; window.scrollTo({ top: 0 }); render(); if (state.tab === 'profile') void refreshGoogleShelf(); });
   document.querySelectorAll('[data-query]').forEach(el => el.onclick = () => { state.tab = 'search'; search(el.dataset.query); });
   document.querySelectorAll('[data-filter]').forEach(el => el.onchange = () => { state.filters[el.dataset.filter] = el.value; state.limit = PAGE_SIZE; repaintResults(); });
   document.querySelector('[data-more]')?.addEventListener('click', () => { state.limit += PAGE_SIZE; repaintResults(); });
@@ -1039,6 +1078,7 @@ function bind() {
   document.querySelectorAll('[data-download-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void downloadPdf(el.dataset.downloadPdf); });
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
+  document.querySelector('[data-check-download]')?.addEventListener('click', () => { if (state.selected) void checkDownloadLicense(state.selected); });
   document.querySelector('[data-read-result]')?.addEventListener('click', () => { if (state.selected) void saveResultPdf(state.selected, true); });
   document.querySelector('[data-library-search]')?.addEventListener('submit', event => { event.preventDefault(); state.libraryQuery = new FormData(event.currentTarget).get('query') || ''; render(); });
   document.querySelectorAll('[data-library-filter]').forEach(el => el.onclick = () => { state.libraryFilter = el.dataset.libraryFilter; render(); });

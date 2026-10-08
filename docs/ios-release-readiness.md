@@ -1,11 +1,38 @@
-# Librarian 1.0 (4) candidate — release readiness, October 7, 2026
+# Librarian 1.0 (6) candidate — release readiness, October 7, 2026
 
-**Decision: build 4 signed, uploaded, processed and attached. Not ready for App Review.**
-App Store Connect record `6819934484`, **Librarian: Books & PDFs**, remains Prepare
-for Submission. After owner Xcode sign-in, build 4 exported successfully, passed
-strict recursive signature verification, and uploaded at 18:00 PDT on October 7.
-Apple processing completed and build 4 replaced build 3 on version 1.0. Its export-compliance
-validation is cleared. No App Review submission or public release has occurred.
+**Decision: build 6 tested, signed and uploaded; Apple processing pending. Content Rights remains unresolved.**
+Build 4 is currently attached to version 1.0, with export compliance cleared.
+The replacement preserves all search providers and limits direct downloads.
+No App Review submission or public release has occurred.
+
+## Build 6 follow-up
+
+- All 15 search providers, catalog covers/descriptions and external source links
+  remain. Direct in-app downloads require an exact CC0 PDF location from OpenAlex,
+  or a published OpenAlex edition matched by DOI to an effective CC BY 4.0
+  version-of-record license deposited with Crossref. Both metadata sources are
+  revalidated without HTTP caching immediately before file retrieval.
+- Unlicensed/unknown download URLs and Gutenberg identifiers no longer enable
+  direct file actions. Original PDFs imported from Files and existing local books
+  retain offline reading, bookmarks and export.
+- Downloaded files retain original title/authors, source, exact license, evidence
+  URL and check time. Source/license links appear in the library.
+- Google shelf persistence now stores references only. Legacy cached metadata is
+  migrated; current details reload online. Offline source references remain.
+- 40 unit tests and 18 WebKit checks passed on small iPhone, iPhone and iPad.
+  They cover publisher DOI/version/license/date matching, blocked stale rights,
+  attribution exports, Google refresh and offline legacy-bookmark migration.
+- A live catalog/publisher metadata check verified a qualifying CC BY 4.0 book:
+  OpenAlex W3210383951, DOI 10.1007/978-3-030-80519-7. This verifies license
+  metadata, not physical-device downloading or worldwide source uptime.
+- Native exports include the original PDF plus a source/license attribution file
+  and share text. Browser exports offer the same attribution as a separate file.
+- Archive and distribution export succeeded; strict recursive IPA signature
+  verification passed. Build 6 upload succeeded at 19:07 PDT on October 7.
+  Evidence is in ignored `releases/ios-1.0-6/` (archive, IPA and logs).
+- Store description and review notes were updated to match the new download policy.
+- Retained covers/abstracts and API account entitlements still require source-rights
+  verification. Restricted downloads alone do not establish those permissions.
 
 ## Build 4 follow-up — October 7
 

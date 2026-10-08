@@ -88,3 +88,54 @@ verified entitlement or be omitted from in-app aggregation. This changes the
 current product's content/download coverage, so the owner has been asked to choose
 this route or supply the missing license information. No blanket Content Rights
 assertion has been saved and no App Review submission has occurred.
+
+## Build 5 implementation — owner chose limited downloads, broad discovery
+
+All 15 providers, covers, descriptions, filters, source links and shelf discovery
+remain enabled. This preserves the owner's requested scope; it does not assert
+that every retained source's terms have been cleared.
+
+- Direct file actions now require an exact OpenAlex location with `is_oa: true`,
+  `license: cc0`, an HTTPS PDF URL and a valid OpenAlex work identifier. Open-access
+  flags alone, filenames, labels and Gutenberg identifiers no longer grant actions.
+- Before saving, the app fetches current work metadata without HTTP caching and
+  verifies the same file remains CC0. If verification fails, no file is requested.
+  The original title/authors, source, license and evidence URL are saved with it;
+  the library exposes source and license links. CC-BY variants are not inferred
+  from versionless license names. Future support can retain their exact terms.
+- Gutenberg discovery and landing-page links remain; misleading unconditional
+  public-domain labels are removed. New Gutenberg text downloads are disabled in
+  the app. Existing local books and user-imported PDFs are preserved.
+- Google bookmarks store only a generated source reference and identifier.
+  Existing saved API metadata is migrated to references; current details reload
+  online with no-store requests. Offline bookmarks retain source links.
+- Help includes content-removal contact via the existing support form.
+
+Evidence for the location-based distinction:
+https://help.openalex.org/data/locations/ and
+https://github.com/ourresearch/openalex-docs/blob/main/api-entities/works/work-object/location-object.md.
+
+Remaining independent issues: CORE account entitlement; Google public API project
+identification per https://developers.google.com/books/docs/v1/using; reuse of
+retained third-party abstracts/previews in relevant territories. These are not
+silently certified by changing the download policy. Content Rights remains unsaved.
+
+### Final candidate: build 6
+
+The CC0-only prototype found zero current matching book/monograph/dissertation
+records in a live OpenAlex check. To preserve useful downloads, build 6 also
+supports `cc-by` OpenAlex locations only when `version: publishedVersion`, DOI
+matches the Crossref record, and an effective `content-version: vor` entry names
+exactly https://creativecommons.org/licenses/by/4.0 (optional trailing slash).
+No license family is silently upgraded to version 4.0. A user-triggered check
+resolves the publisher license before displaying file actions; the app repeats
+the checks before retrieval. Future-dated, TDM-only, mismatched DOI, unversioned,
+NC/ND/SA and unknown licenses do not enable this route.
+
+A live matching example is OpenAlex W3210383951 / DOI
+10.1007/978-3-030-80519-7, whose published PDF location is `cc-by` and whose
+Crossref record contains a CC BY 4.0 `vor` license effective 2021-11-04.
+Original PDFs remain unchanged. The app displays source/license links, saves
+provenance and authors, and includes an attribution text file with native exports.
+Browser exports expose a separate attribution download. This does not resolve
+independent API entitlement or retained preview/abstract permissions.
