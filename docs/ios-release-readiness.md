@@ -184,3 +184,11 @@ App Store signing/export, and strict deep signature verification succeeded;
 the signed IPA reports build 7. Evidence is under ignored
 `releases/ios-1.0-7/`. Physical iPhone 16 remains unavailable to devicectl and no
 physical iPad is connected. Those device checks remain outstanding.
+
+Build 7 uploaded successfully at 20:03 PDT October 7 and processed under UUID
+`cacfbf5c-d07a-4f4f-a2a1-5df8c3245f64`. Export answers are saved (standard
+algorithms outside Apple OS; no France distribution). TestFlight shows Ready to
+Submit. Build 7 replaced build 6 on version 1.0 and the selection is saved.
+Fresh Add for Review validation still lists Content Rights Information only.
+No App Review submission or public release occurred. Screenshot evidence:
+`releases/ios-1.0-7/release-validation.png` (ignored).
