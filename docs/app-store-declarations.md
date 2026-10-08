@@ -11,7 +11,7 @@ with the owner-confirmed product purpose and absence of analytics.
 The Add for Review check rejects submission for these two items after publishing App Privacy on October 7:
 
 1. Content Rights Information is missing.
-2. Build 3 lacks export compliance information.
+2. Build 4 lacks export compliance information.
 
 Screenshots, copyright and review-contact information are no longer listed as
 validation errors. Worldwide regional eligibility and real-device qualification

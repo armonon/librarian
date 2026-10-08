@@ -84,5 +84,6 @@ Age rating is saved (16+, 17+ on pre-26 systems, with regional exceptions).
 App Privacy is published: Coarse Location, Search History, Performance Data and
 Other Diagnostic Data, linked to users for App Functionality, not tracking.
 Build 4 is archived and tested with Google Books attribution/order fixes and
-clearer bundled privacy text. Signing is blocked pending Xcode Apple Account
-sign-in/distribution identity; build 3 remains attached. No public release.
+clearer bundled privacy text. Owner Xcode sign-in resolved signing; build 4's
+verified IPA uploaded at 18:00 PDT, finished Apple processing, and replaced build 3
+on version 1.0. Build 4 remains Missing Compliance. App Review notes now disclose operational hosting logs. No public release.

@@ -1,13 +1,11 @@
 # Librarian 1.0 (4) candidate — release readiness, October 7, 2026
 
-**Decision: build 4 archived and tested; signing blocked. Not ready for App Review.**
+**Decision: build 4 signed, uploaded, processed and attached. Not ready for App Review.**
 App Store Connect record `6819934484`, **Librarian: Books & PDFs**, remains Prepare
-for Submission. Build 3 uploaded successfully at 22:18 PDT, finished processing,
-and is attached to version 1.0 with Missing Compliance. This is not an App Review
-approval or a public release. Build 4 contains the attribution/privacy follow-up
-but cannot yet replace build 3: Xcode has no signed-in account and no Apple
-Distribution signing identity. A development identity and Developer ID identity
-are present; neither replaces App Store distribution signing.
+for Submission. After owner Xcode sign-in, build 4 exported successfully, passed
+strict recursive signature verification, and uploaded at 18:00 PDT on October 7.
+Apple processing completed and build 4 replaced build 3 on version 1.0. Its status
+is Missing Compliance. No App Review submission or public release has occurred.
 
 ## Build 4 follow-up — October 7
 
@@ -20,9 +18,13 @@ are present; neither replaces App Store distribution signing.
   A final focused attribution rerun passed on all three layouts.
 - Xcode 26.2 Release device archive succeeded:
   `releases/ios-1.0-4/Librarian-unsigned.xcarchive`.
-- Distribution export failed with No Accounts / no iOS Distribution certificate.
-  Xcode Settings > Apple Accounts was opened for owner sign-in. Do not treat the
-  unsigned archive as distributable. Build 4 is not uploaded or attached yet.
+- Owner Xcode sign-in resolved distribution signing. Exported IPA:
+  `releases/ios-1.0-4/AppStore/App.ipa`; strict recursive signature verification
+  passed and embedded CFBundleVersion is 4. Upload succeeded at 18:00 PDT;
+  Apple processing completed; build 4 is attached to version 1.0. Export/upload
+  logs remain in the ignored folder.
+- App Review notes now explicitly describe operational hosting logs and
+  distinguish them from behavioral analytics.
 - App Privacy is published. A fresh Apple validation now lists only export
   compliance and Content Rights. Age ratings remain saved.
 
@@ -96,9 +98,8 @@ needs physical-device testing.
    catalogs/content in launch territories. Age ratings are saved: 16+ globally
    on current operating systems, 17+ before version 26, with regional exceptions.
    Do not infer worldwide copyright permission from US public-domain status.
-2. **Signing and upload — Xcode account needed:** restore Apple Developer sign-in
-   and distribution signing, export/upload build 4 and attach it after processing.
-   App Privacy is already published based on verified hosting logs.
+2. **Completed signing/privacy:** build 4 is signed, uploaded, processed and
+   attached. App Privacy is published based on verified hosting logs.
 3. **Export compliance — owner:** PDF.js bundles AES/RC4 implementations. Apple's
    standard-encryption questionnaire with France selected explicitly requires
    export documentation for review. Supply applicable documentation or establish
@@ -110,7 +111,7 @@ needs physical-device testing.
    devicectl; no physical iPad connected. Test local/iCloud Files import, native
    Save to Files, offline cold launch, force-quit/reopen, rotation, background
    recovery, mixed/large PDFs, low storage, VoiceOver and text sizing on both.
-6. **Final submission:** build 3 remains processed and attached; replace with build 4. Resolve its Missing
+6. **Final submission:** build 4 is processed and attached. Resolve its Missing
    Compliance state, review Apple's validation and submit for App Review only
    after the above gates. No public release has occurred.
 
