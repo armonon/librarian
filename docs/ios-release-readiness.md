@@ -211,3 +211,9 @@ test logs, sync and archive logs are under ignored releases/ios-1.0-8.
 App Store Connect was signed out when inspected. Build 7 is the last verified
 attached candidate. The build-8 metadata/review-note draft is saved locally in
 app-store-metadata.md; it has not yet been entered in Apple's website.
+
+Build 8 App Store export/signing and strict deep signature verification succeeded.
+The signed IPA reports CFBundleVersion 8. Xcode reports Upload succeeded and
+EXPORT SUCCEEDED at 17:07 PDT October 8. Processing, export questionnaire,
+build selection and metadata updates still require restored App Store Connect
+browser access; no App Review submission or release occurred.
