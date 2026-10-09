@@ -178,3 +178,13 @@ entitlements are not certified. Repeat export answers on the replacement build
 
 Build 6 has now processed and replaced build 4 on version 1.0. Export answers
 are saved; the latest submission validation lists Content Rights only.
+
+
+## October 8 owner declaration and submission
+
+The owner confirmed belief in the necessary third-party content rights after
+reviewing Apple's exact declaration. The Yes / necessary rights option is saved;
+this is the owner's confirmation, not independent legal clearance. Version 1.0
+(build 8) submitted at 5:31 PM PDT. Apple shows Waiting for Review under
+submission d4f3875b-d665-4377-947a-094495bd064c. Automatic release is enabled;
+review approval/public availability remain pending.

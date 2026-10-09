@@ -1,10 +1,12 @@
 # Librarian 1.0 — App Store submission draft
 
-Status: build 8 is processed, attached and saved on version 1.0. Export compliance
-is cleared. The description and review notes now describe source-link previews
-and CORE website access. Apple's latest validation lists Content Rights only.
-The owner declaration is open and unselected; no App Review submission or release
-has occurred. Verification: October 8, 2026.
+Status: version 1.0 (build 8) submitted to App Review on October 8, 2026 at
+5:31 PM PDT. Apple shows Waiting for Review. The owner confirmed the Content
+Rights statement, which is saved. Export compliance, description and review
+notes are saved. Automatic release after approval is enabled. This is a review
+submission, not approval or public availability.
+
+Submission ID: d4f3875b-d665-4377-947a-094495bd064c.
 
 - Name: Librarian: Books & PDFs (Librarian was unavailable)
 - App Store Connect: https://appstoreconnect.apple.com/apps/6819934484/distribution

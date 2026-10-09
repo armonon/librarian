@@ -236,3 +236,26 @@ clearance of every upstream API or catalog. Physical-device and EU DSA checks
 remain separately documented. No App Review submission or release occurred.
 Proof: releases/ios-1.0-8/release-validation.png and
 releases/ios-1.0-8/content-rights-declaration.png (both ignored).
+
+
+## Submitted to App Review — October 8, 2026, 5:31 PM PDT
+
+The owner answered the displayed Content Rights confirmation with “Yea i belive
+i do, its just a search engine that uses a few different library searches”. The
+assistant clarified that search-engine status alone does not establish rights,
+then recorded the owner's confirmation using Apple's Yes / necessary rights
+option and saved App Information. This records an owner declaration, not an
+independent legal conclusion or newly supplied license evidence.
+
+Apple accepted Add for Review without further validation errors. Version 1.0,
+build 8 was then submitted through Submit for Review. Apple displayed “1 Item
+Submitted”; the resulting iOS Submission page shows Waiting for Review for
+1.0 (8). Submission ID: d4f3875b-d665-4377-947a-094495bd064c.
+
+Automatic release after approval remains enabled. No approval or public App
+Store availability is established yet. Physical-device qualification and the
+separately documented EU DSA account information remain outside this submission
+confirmation; do not describe the app as fully qualified on actual devices.
+
+Evidence (ignored): releases/ios-1.0-8/submitted.png and
+releases/ios-1.0-8/waiting-for-review.png.
