@@ -33,12 +33,32 @@ export function permittedDownload(download) {
 }
 // A shelf bookmark retains identity only; API metadata is refreshed online.
 export function shelfRecord(book) {
-  if (!book.id?.startsWith('gb:')) return book;
+  if (!book.id?.startsWith('gb:')) return displayRecord(book);
   const id = book.id;
   return { id, title: 'Saved Google Books link', authors: [], subjects: [], ids: [], langs: [],
     cover: '', desc: 'Connect to load current book details, or open the source link.',
     availability: 'Catalog reference', sources: ['Google Books'], googleReference: true,
     links: [{ label: 'Google Books', url: `https://books.google.com/books?id=${encodeURIComponent(id.slice(3))}` }] };
+}
+
+// Permission for a catalog's metadata does not automatically cover its images
+// or linked full text. Keep provenance when records are merged or saved.
+const DESCRIPTION_SOURCES = new Set(['Open Library', 'DPLA', 'Europeana']);
+export function displayRecord(book, fresh = false) {
+  if (fresh && book.sources?.length === 1 && book.sources[0] === 'Google Books') return book;
+  const source = book.sources?.length === 1 ? book.sources[0] : '';
+  const descriptionSource = fresh && DESCRIPTION_SOURCES.has(source) ? source : book.descriptionSource;
+  const keepDescription = DESCRIPTION_SOURCES.has(descriptionSource) && book.sources?.includes(descriptionSource);
+  let keepCover = false;
+  try {
+    const url = new URL(book.cover);
+    keepCover = book.sources?.includes('Open Library') && url.origin === 'https://covers.openlibrary.org' &&
+      /^\/b\/(?:id\/\d+|olid\/OL\d+M)-[SML]\.jpg$/.test(url.pathname) && !url.username && !url.password && !url.search && !url.hash;
+  } catch { /* An absent or unverified preview uses the title placeholder. */ }
+  return { ...book, cover: keepCover ? book.cover : '',
+    desc: keepDescription ? book.desc : 'Open a source below for previews and descriptions.',
+    descriptionSource: keepDescription ? descriptionSource : '',
+    previewAtSource: Boolean(book.previewAtSource || (book.cover && !keepCover) || !keepDescription) };
 }
 
 export function downloadCredits(book) {

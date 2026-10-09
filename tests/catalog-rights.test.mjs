@@ -28,7 +28,7 @@ test('Google shelf references remove cached content without losing bookmark iden
   assert.equal(clean.cover,''); assert.deepEqual(clean.authors,[]);
   assert.equal(clean.links[0].url,'https://books.google.com/books?id=abc');
   assert.deepEqual(shelfRecord(clean),clean);
-  const other={id:'ol:123',title:'Keep me'}; assert.equal(shelfRecord(other),other);
+  const other={id:'ol:123',title:'Keep me'}; assert.equal(shelfRecord(other).title,other.title);
 });
 
 test('CC BY requires matching DOI, published edition, exact publisher license and effective date', () => {

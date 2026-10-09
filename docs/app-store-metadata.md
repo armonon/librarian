@@ -1,10 +1,9 @@
 # Librarian 1.0 — App Store submission draft
 
-Status: build 6 is the candidate for restricted direct downloads and refreshed
-Google shelf metadata. Build 6 is processed and attached; its export compliance is cleared.
-Age ratings and App Privacy are saved. France and China mainland are excluded;
-price remains free. Content Rights remains unresolved. See
-[ios-release-readiness.md](ios-release-readiness.md) for release evidence.
+Status: build 8 is the source-link display candidate. Build 7 remains attached
+until build 8 can be processed and selected in App Store Connect. Browser access
+currently requires sign-in. This file is the updated copy to save after sign-in;
+it is not evidence that Apple has accepted or published it.
 
 - Name: Librarian: Books & PDFs (Librarian was unavailable)
 - App Store Connect: https://appstoreconnect.apple.com/apps/6819934484/distribution
@@ -14,7 +13,7 @@ price remains free. Content Rights remains unresolved. See
 - Support URL: https://thecreatingco.com/testing/
 - Privacy policy URL: https://thecreatingco.com/privacy/
 - Bundle identifier: com.armonon.librarian
-- Candidate version/build: 1.0 / 6
+- Candidate version/build: 1.0 / 8
 - Platforms: iPhone and iPad, iOS/iPadOS 18 or later
 
 ## Description
@@ -27,7 +26,8 @@ one place on iPhone and iPad.
 Search by title, author, subject, or ISBN across supported catalogs. Save catalog
 references to your shelf, or download PDFs with a confirmed CC0 or CC BY 4.0 license to read
 inside Librarian. Other results link to their source for reading and borrowing.
-Google Books shelf details refresh online.
+Google Books shelf details refresh online. Unverified previews and descriptions
+open on source websites; CORE search opens its website.
 
 Bring PDFs from Files, pick up where you left off, and bookmark the pages you
 want to return to. Find saved books by title or author, sort your library, and
@@ -90,3 +90,13 @@ Owner approved excluding France and China mainland on October 7. Both regions
 show Not Available; price remains free in the 173 remaining launch regions.
 Standard algorithms outside Apple OS / no France answers cleared export
 validation. Only Content Rights remains in the latest Add for Review check.
+
+## Build 8 review-note addition
+
+Search aggregates 14 catalogs. CORE is available through a website link and its
+API is not called by this build. Unverified covers and descriptions are replaced
+with source links before result merging or shelf storage. Legacy shelf entries
+are cleaned on load. Supported Open Library CoverID/OLID images and Google Books
+content remain, as do DPLA/Europeana descriptions under their metadata terms.
+The app does not infer image rights from a metadata or full-text license. Direct
+PDF saving retains the build-6 exact-file license checks and export attribution.

@@ -1,7 +1,7 @@
 # Provider rights and age-rating review — October 7, 2026
 
-Scope: release 1.0 (6), with all current search providers enabled, plus the
-post-build-6 request-spacing fix described below. This is a continuing
+Current scope: release 1.0 (8) candidate. Build 8 policy below supersedes the
+earlier build-4 through build-7 observations and retained-display proposals. This is a continuing
 primary-source review, not a blanket clearance of every returned item.
 Public licenses can supply permission without individual letters. The remaining
 work is to verify the app follows those terms and preserves item-level rights.
@@ -177,3 +177,41 @@ checks passed across small iPhone, iPhone and iPad viewports; the iOS-mode web
 bundle builds successfully. Native archive/upload remains pending. App Store
 Connect was rechecked: build 6 remains attached, Prepare for Submission, with
 Content Rights Information the only listed Add for Review validation error.
+
+## Build 8 — owner approved source links on October 8, 2026
+
+The app now filters preview content before merging search records. It never
+loads unverified cover URLs into image elements. The same policy migrates old
+shelf records and filters future shelf writes; mixed-source legacy prose does
+not inherit permission from a different catalog in the merged record.
+
+- Open Library: retain exact HTTPS CoverID/OLID API URLs and newly generated
+  factual edition/rating summaries, with source links. Legacy mixed-source
+  descriptions are replaced.
+- Google Books: keep its separate live API presentation, branding/order and
+  references-only shelf behavior. This change does not resolve the previously
+  recorded API project-identification configuration question.
+- DPLA and Europeana: retain their CC0 metadata descriptions, with provenance;
+  their image URLs are not treated as CC0 and are omitted from app previews.
+- Crossref, OpenAlex, Gutenberg, Internet Archive, SRU catalogs, Finna and Norway:
+  preserve titles/authors/catalog facts and source links; unverified descriptions
+  and previews use the source destination. Crossref abstracts are no longer
+  requested. OpenAlex inverted abstracts are no longer reconstructed.
+- CORE: its API fetcher is removed from the app. Discover and Sources link to
+  the CORE website. There are 14 live catalog fetchers plus the CORE source link.
+  No assertion about the existing CORE account license has been made.
+- PDF imports, existing downloaded files, bookmarks, offline reading and the
+  licensed download path are unchanged. No third-party file bytes were deleted.
+
+The small-phone details layout now stacks the cover above the content so the
+source-link section has usable width. Buttons wrap without shrinking their text.
+
+Validation: 44 unit tests and 21 WebKit browser checks pass on small iPhone,
+iPhone and iPad. New tests assert no requests for unverified images or CORE's
+API, removal of legacy shelf prose/images, safe merged records, retained licensed
+metadata, and working external destinations. Physical device checks remain open.
+
+This narrows the display-rights gaps; it is not a claim of legal clearance for
+all upstream catalog/API access. Historical notes above describe previous builds,
+not a reason to reintroduce removed preview content. App Store Content Rights
+has not been certified or submitted by this change.

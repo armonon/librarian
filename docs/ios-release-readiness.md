@@ -192,3 +192,22 @@ Submit. Build 7 replaced build 6 on version 1.0 and the selection is saved.
 Fresh Add for Review validation still lists Content Rights Information only.
 No App Review submission or public release occurred. Screenshot evidence:
 `releases/ios-1.0-7/release-validation.png` (ignored).
+
+## Build 8 — source-link display policy (October 8)
+
+The owner approved moving unverified previews/descriptions to source links.
+The shared display filter runs before merge and on shelf migration/persistence.
+Google Books presentation and supported Open Library covers remain; DPLA and
+Europeana metadata descriptions retain their source provenance. Other catalog
+previews/prose use source destinations. CORE is now a website link rather than
+an app API fetcher, leaving 14 live catalog integrations. See the build-8 section
+of source-rights-review.md for the retained and removed content categories.
+
+44 unit tests and 21 WebKit browser checks passed. The final iOS-mode bundle
+synced and the native Release archive succeeded. Small-phone details now stack
+vertically; action buttons wrap without compressing their labels. Screenshots,
+test logs, sync and archive logs are under ignored releases/ios-1.0-8.
+
+App Store Connect was signed out when inspected. Build 7 is the last verified
+attached candidate. The build-8 metadata/review-note draft is saved locally in
+app-store-metadata.md; it has not yet been entered in Apple's website.

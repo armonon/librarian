@@ -1,6 +1,6 @@
 import './styles.css';
 import { spacedRequests } from './request-spacing.js';
-import { CC0, CC_BY, openAlexDownloads, needsPublisherLicense, downloadCredits, shelfRecord } from './catalog-rights.js';
+import { CC0, CC_BY, openAlexDownloads, needsPublisherLicense, downloadCredits, shelfRecord, displayRecord } from './catalog-rights.js';
 import { parseGutenbergCatalog } from './gutenberg-catalog.js';
 import { externalURL } from './external-links.js';
 import { fetchPdf, MAX_BOOK_BYTES } from './book-download.js';
@@ -17,17 +17,17 @@ const SOURCES = [
   { name: 'Open Library', badge: 'core', priority: 'Index backbone', live: true, url: 'https://openlibrary.org/developers/api', coverage: 'Open works, editions, ISBNs, authors, subjects, covers, ratings, and Internet Archive read/borrow links.', access: 'Free API, keyless. Powers the editions expander.', best: ['works + editions', 'covers', 'ISBNs', 'subjects'] },
   { name: 'Google Books', badge: 'coverage', priority: 'Coverage enrichment', live: true, url: 'https://developers.google.com/books/docs/v1/using', coverage: 'Massive mainstream discovery index with thumbnails, previews, categories, and sale info.', access: 'Keyless (anonymous quota); add a key for production volume.', best: ['previews', 'mainstream', 'covers', 'page counts'] },
   { name: 'Project Gutenberg / Gutendex', badge: 'public domain', priority: 'Free classics', live: true, url: 'https://gutendex.com/', coverage: 'Public-domain ebook metadata, formats, languages, and download/popularity counts.', access: 'Free JSON API, keyless.', best: ['free ebooks', 'EPUB/HTML', 'classics'] },
-  { name: 'OpenAlex', badge: 'scholarly', priority: 'Academic works', live: true, url: 'https://openalex.org/', coverage: 'Books, monographs, and dissertations with abstracts, open-access links, and an author/institution graph.', access: 'Free, CC0; polite pool via mailto.', best: ['monographs', 'dissertations', 'abstracts', 'OA links'] },
+  { name: 'OpenAlex', badge: 'scholarly', priority: 'Academic works', live: true, url: 'https://openalex.org/', coverage: 'Books, monographs, and dissertations with catalog facts and open-access links.', access: 'Free, CC0; polite pool via mailto.', best: ['monographs', 'dissertations', 'OA links'] },
   { name: 'Crossref', badge: 'scholarly', priority: 'Scholarly books', live: true, url: 'https://api.crossref.org/', coverage: 'DOI-registered books, monographs, and reference works with ISBNs and publishers.', access: 'Free polite pool; mailto included.', best: ['DOIs', 'ISBNs', 'publishers'] },
-  { name: 'Internet Archive', badge: 'full text', priority: 'Read / borrow layer', live: true, url: 'https://archive.org/developers/', coverage: 'Digitized books, scans, OCR text, and read/borrow links with cover thumbnails.', access: 'Free, keyless.', best: ['read links', 'scans', 'covers'] },
-  { name: 'CORE', badge: 'open access', priority: 'OA full text', live: true, url: 'https://core.ac.uk/services/api', coverage: 'Aggregated open-access papers, theses, and repository full text from thousands of providers.', access: 'Free API key (via proxy).', best: ['OA PDFs', 'theses', 'repositories'] },
-  { name: 'DPLA', badge: 'US heritage', priority: 'US libraries + archives', live: true, url: 'https://pro.dp.la/developers', coverage: 'Tens of millions of items from US libraries, archives, and museums.', access: 'Free API key (via proxy).', best: ['archives', 'museums', 'covers'] },
-  { name: 'Europeana', badge: 'EU heritage', priority: 'European institutions', live: true, url: 'https://pro.europeana.eu/page/apis', coverage: 'Books and texts from 2,000+ European galleries, libraries, archives, and museums.', access: 'Free API key (via proxy).', best: ['European texts', 'manuscripts', 'covers'] },
+  { name: 'Internet Archive', badge: 'full text', priority: 'Read / borrow layer', live: true, url: 'https://archive.org/developers/', coverage: 'Catalog records and source links to digitized books and borrowing options.', access: 'Free, keyless.', best: ['read links', 'scans'] },
+  { name: 'CORE', badge: 'open access', priority: 'Search at source', live: false, linkOnly: true, url: 'https://core.ac.uk/', coverage: 'Search papers, theses, and repository records on the CORE website.', access: 'Opens CORE in your browser.', best: ['research', 'theses', 'repositories'] },
+  { name: 'DPLA', badge: 'US heritage', priority: 'US libraries + archives', live: true, url: 'https://pro.dp.la/developers', coverage: 'Tens of millions of items from US libraries, archives, and museums.', access: 'Free API key (via proxy).', best: ['archives', 'museums'] },
+  { name: 'Europeana', badge: 'EU heritage', priority: 'European institutions', live: true, url: 'https://pro.europeana.eu/page/apis', coverage: 'Books and texts from 2,000+ European galleries, libraries, archives, and museums.', access: 'Free API key (via proxy).', best: ['European texts', 'manuscripts'] },
   { name: 'K10plus', badge: 'union catalog', priority: 'Union catalog (~200M)', live: true, url: 'https://www.k10plus.de/', coverage: 'One of the largest freely queryable union catalogs — the closest open analog to WorldCat scale.', access: 'Keyless SRU/Dublin Core (via proxy).', best: ['union records', 'editions', 'ISBNs'] },
   { name: 'Library of Congress', badge: 'authority', priority: 'US national catalog', live: true, url: 'https://www.loc.gov/apis/', coverage: 'Library-grade catalog records with subjects, identifiers, and provenance.', access: 'Keyless SRU (via proxy).', best: ['authority data', 'subjects', 'ISBNs'] },
   { name: 'BnF', badge: 'national', priority: 'France', live: true, url: 'https://api.bnf.fr/', coverage: 'Bibliothèque nationale de France catalog via SRU.', access: 'Keyless SRU/Dublin Core (via proxy).', best: ['French imprints', 'ARK records'] },
   { name: 'DNB', badge: 'national', priority: 'Germany', live: true, url: 'https://www.dnb.de/sru', coverage: 'Deutsche Nationalbibliothek — legal-deposit, near-complete for German publishing.', access: 'Keyless SRU (via proxy).', best: ['German imprints', 'legal deposit'] },
-  { name: 'Finna', badge: 'aggregator', priority: 'Finland', live: true, url: 'https://www.finna.fi/', coverage: 'Aggregates every Finnish library, archive, and museum in one API.', access: 'Keyless JSON (via proxy).', best: ['Finnish libraries', 'covers', 'ISBNs'] },
+  { name: 'Finna', badge: 'aggregator', priority: 'Finland', live: true, url: 'https://www.finna.fi/', coverage: 'Aggregates every Finnish library, archive, and museum in one API.', access: 'Keyless JSON (via proxy).', best: ['Finnish libraries', 'ISBNs'] },
   { name: 'Nasjonalbiblioteket', badge: 'national', priority: 'Norway', live: true, url: 'https://api.nb.no/', coverage: 'National Library of Norway — large digitized book collection.', access: 'Keyless JSON (via proxy).', best: ['Norwegian imprints', 'digitized'] },
   { name: 'WorldCat', badge: 'union catalog', priority: 'Find in a library', live: false, url: 'https://www.oclc.org/developer/', coverage: 'Global union catalog of ~17k libraries. Used as keyless "find in a library" link-outs by ISBN; the full API needs OCLC membership.', access: 'Link-outs live; API requires paid OCLC membership.', best: ['holdings', 'link-outs'] },
   { name: 'Wikidata', badge: 'graph', priority: 'Knowledge graph (roadmap)', live: false, url: 'https://www.wikidata.org/wiki/Wikidata:Data_access', coverage: 'Cross-links for works, authors, awards, series, adaptations, and external IDs.', access: 'SPARQL; planned enrichment layer.', best: ['entity resolution', 'awards', 'series'] },
@@ -60,7 +60,7 @@ const GUTENDEX_PAGES = [1, 2, 3, 4];
 const PAGE_SIZE = 24;
 // Polite-pool contact sent to OpenAlex/Crossref for higher, friendlier rate limits. Change to your email.
 const POLITE_MAILTO = 'librarian-atlas@users.noreply.github.com';
-// Server-side proxy for keyed / no-CORS sources (DPLA, Europeana, CORE). Keys live in Netlify env vars.
+// Server-side proxy for keyed / no-CORS sources (DPLA, Europeana and national catalogs). Keys live in Netlify env vars.
 // In the native (Capacitor) app the UI loads from a local origin, so serverless
 // function calls must be absolute; on the web they stay same-origin (relative).
 const NATIVE = location.protocol === 'capacitor:' || location.protocol === 'file:' || !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -428,7 +428,6 @@ function availLabel(av = '') { if (/free|public/i.test(av)) return 'Free'; if (/
 function tint(s = '?') { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COVER_TINTS[h % COVER_TINTS.length]; }
 function coverInner(b, cls = 'book') { return externalURL(b.cover) ? `<img src="${esc(b.cover)}" alt="Cover for ${esc(b.title)}" loading="lazy" />` : `<span class="initial" style="background:${tint(b.title)}">${esc((b.title || '?').trim()[0] || '?')}</span>`; }
 const SRC_TAG = { 'Open Library': 'OL', 'Google Books': 'Google Books', 'Project Gutenberg': 'PG', 'Internet Archive': 'IA', 'OpenAlex': 'OA', 'Crossref': 'CR', 'DPLA': 'DPLA', 'Europeana': 'EUR', 'CORE': 'CORE', 'K10plus': 'K10', 'Library of Congress': 'LOC', 'BnF': 'BNF', 'DNB': 'DNB', 'Finna': 'FIN', 'Nasjonalbiblioteket': 'NB' };
-function reconstructAbstract(inv) { if (!inv) return ''; const out = []; for (const [w, ps] of Object.entries(inv)) for (const p of ps) out[p] = w; return out.join(' ').replace(/\s+/g, ' ').trim(); }
 function isbnOf(ids = []) { return uniq(ids).map(x => String(x).replace(/[^0-9Xx]/g, '')).find(x => /^(97[89]\d{10}|\d{9}[\dXx])$/.test(x)) || ''; }
 
 const ICON = {
@@ -535,11 +534,10 @@ async function openAlex(q) {
   const data = await json(`https://api.openalex.org/works?search=${encodeURIComponent(term)}&filter=type:book|monograph|dissertation&per-page=200&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
   return (data.results || []).map(w => {
     const oa = w.open_access || {}, loc = w.best_oa_location || w.primary_location || {}, doi = (w.doi || '').replace(/^https?:\/\/doi\.org\//, '');
-    const abstract = reconstructAbstract(w.abstract_inverted_index);
     return {
       id: `oa:${w.id}`, title: w.display_name, authors: uniq((w.authorships || []).map(a => a.author?.display_name)).slice(0, 4), year: w.publication_year || '', pages: '',
       subjects: uniq((w.topics || []).map(t => t.display_name)).slice(0, 10), langs: w.language ? [w.language] : [], ids: uniq([doi]).slice(0, 8), cover: '',
-      desc: abstract ? compact(abstract, 320) : `${titleCase(w.type || 'work')}${loc.source?.display_name ? ` • ${loc.source.display_name}` : ''}${w.cited_by_count ? ` • cited ${w.cited_by_count.toLocaleString()} times` : ''}.`,
+      desc: `${titleCase(w.type || 'work')}${loc.source?.display_name ? ` • ${loc.source.display_name}` : ''}${w.cited_by_count ? ` • cited ${w.cited_by_count.toLocaleString()} times` : ''}.`,
       availability: oa.is_oa ? 'Free / open access' : 'Catalog only',
       links: uniqLinks([...(oa.oa_url ? [{ label: 'Open-access full text', url: oa.oa_url }] : []), ...(loc.landing_page_url ? [{ label: 'Publisher page', url: loc.landing_page_url }] : []), ...(doi ? [{ label: 'DOI', url: `https://doi.org/${doi}` }] : []), { label: 'OpenAlex', url: w.id }]),
       downloadWork: needsPublisherLicense(w) ? w.id : '', downloads: openAlexDownloads(w), sources: ['OpenAlex']
@@ -549,13 +547,13 @@ async function openAlex(q) {
 
 async function crossref(q) {
   const term = q.replace(/^isbn:/i, '').trim();
-  const data = await json(`https://api.crossref.org/works?query=${encodeURIComponent(term)}&filter=type:monograph,type:book,type:reference-book&rows=100&select=title,author,published,ISBN,publisher,type,abstract,subject,language,DOI&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
+  const data = await json(`https://api.crossref.org/works?query=${encodeURIComponent(term)}&filter=type:monograph,type:book,type:reference-book&rows=100&select=title,author,published,ISBN,publisher,type,subject,language,DOI&mailto=${encodeURIComponent(POLITE_MAILTO)}`);
   return (data.message?.items || []).map(it => {
     const doi = it.DOI || '', yr = (it.published?.['date-parts']?.[0] || [])[0] || '';
     return {
       id: `cr:${doi || (it.title || [])[0] || Math.random()}`, title: (it.title || [])[0], authors: uniq((it.author || []).map(a => [a.given, a.family].filter(Boolean).join(' '))).slice(0, 4), year: yr, pages: '',
       subjects: uniq(it.subject).slice(0, 10), langs: it.language ? [it.language] : [], ids: uniq(it.ISBN).slice(0, 8), cover: '',
-      desc: it.abstract ? compact(String(it.abstract).replace(/<[^>]+>/g, ''), 320) : `${it.publisher || 'Publisher'}${it.type ? ` • ${titleCase(it.type.replace(/-/g, ' '))}` : ''}.`,
+      desc: `${it.publisher || 'Publisher'}${it.type ? ` • ${titleCase(it.type.replace(/-/g, ' '))}` : ''}.`,
       availability: 'Catalog only', links: uniqLinks(doi ? [{ label: 'DOI', url: `https://doi.org/${doi}` }] : []), sources: ['Crossref']
     };
   });
@@ -605,18 +603,6 @@ async function europeana(q) {
   }));
 }
 
-async function core(q) {
-  const data = await json(`${PROXY}?api=core&q=${encodeURIComponent(q.replace(/^isbn:/i, '').trim())}`);
-  return (data.results || []).map(w => ({
-    id: `core:${w.id}`, title: w.title, authors: uniq((w.authors || []).map(a => a.name)).slice(0, 4), year: w.yearPublished || '', pages: '',
-    subjects: uniq([].concat(w.fieldOfStudy || []).filter(Boolean)).slice(0, 10), langs: w.language ? [w.language.name || w.language.code] : [], ids: uniq([w.doi]).slice(0, 8), cover: '',
-    desc: w.abstract ? compact(w.abstract, 320) : `${w.publisher || 'Open-access work'}${w.documentType ? ` • ${w.documentType}` : ''}.`,
-    availability: w.downloadUrl ? 'Free / open access' : 'Catalog only',
-    links: uniqLinks([...(w.downloadUrl ? [{ label: 'Open-access PDF', url: w.downloadUrl }] : []), ...(w.doi ? [{ label: 'DOI', url: `https://doi.org/${w.doi}` }] : []), { label: 'CORE', url: `https://core.ac.uk/works/${w.id}` }]),
-    sources: ['CORE']
-  }));
-}
-
 // Generic SRU / Dublin Core parser — handles K10plus, Library of Congress, BnF (namespaces vary).
 const RELATORS = /[.,]\s*(auteur du texte|éditeur scientifique|verfasser(in)?|mitwirkende[r]?|herausgeber(in)?|übersetzer(in)?|author|editor|translator|illustrator|compiler|writer of [a-z ]+|foreword|introduction|contributor)\b.*$/i;
 const cleanName = s => s.replace(/\s*[([][^)\]]*[)\]]/g, '').replace(RELATORS, '').replace(/[\s,.;:/]+$/, '').trim();
@@ -629,7 +615,7 @@ function parseSRU(xml, source, prefix) {
     const title = cleanTitle(get('title')[0] || ''); if (!title) return null;
     const rawIds = get('identifier');
     const ids = uniq(rawIds.map(x => { const m = x.replace(/[^0-9Xx]/g, ''); return /^(97[89]\d{10}|\d{9}[\dXx])$/.test(m) ? m : (/^(https?:|urn:|ark:)/i.test(x) ? '' : (x.length <= 20 ? x : '')); }).filter(Boolean));
-    const wc = isbnOf(ids), catUrl = rawIds.find(x => /^https?:\/\//i.test(x));
+    const wc = isbnOf(ids), catUrl = rawIds.find(x => /^https?:\/\//i.test(x)) || { K10plus: 'https://www.k10plus.de/', 'Library of Congress': 'https://catalog.loc.gov/', BnF: 'https://catalogue.bnf.fr/', DNB: 'https://www.dnb.de/' }[source];
     return {
       id: `${prefix}:${i}:${(wc || title).slice(0, 50)}`, title,
       authors: uniq([...get('creator'), ...get('contributor')].map(cleanName)).filter(Boolean).slice(0, 4),
@@ -683,7 +669,6 @@ const FETCHERS = {
   'OpenAlex': { fn: openAlex, tier: 'fast' },
   'Crossref': { fn: crossref, tier: 'fast' },
   'Internet Archive': { fn: internetArchive, tier: 'fast' },
-  'CORE': { fn: core, tier: 'slow' },
   'DPLA': { fn: dpla, tier: 'slow' },
   'Europeana': { fn: europeana, tier: 'slow' },
   'K10plus': { fn: k10plus, tier: 'slow' },
@@ -702,7 +687,7 @@ function toggleSource(name) {
 // Runs one tier, recording per-source result counts (-1 = failed) for the Sources tab.
 function runTier(tier, q) {
   return Object.entries(FETCHERS).filter(([n, v]) => v.tier === tier && sourceOn(n)).map(([n, v]) =>
-    v.fn(q).then(r => { state.sourceStats[n] = (r || []).length; return r || []; })
+    v.fn(q).then(r => { state.sourceStats[n] = (r || []).length; return (r || []).map(book => displayRecord(book, true)); })
       .catch(() => { state.sourceStats[n] = -1; return []; }));
 }
 
@@ -740,8 +725,9 @@ function dedupeAuthors(list) {
   return [...seen.values()].slice(0, 5);
 }
 function combine(a, b) {
+  const description = Boolean(a.descriptionSource) !== Boolean(b.descriptionSource) ? (a.descriptionSource ? a : b) : ((a.desc || '').length >= (b.desc || '').length ? a : b);
   return { ...a, work: a.work || b.work, title: a.title || b.title, year: a.year || b.year, pages: a.pages || b.pages, cover: a.cover || b.cover,
-    desc: (a.desc || '').length >= (b.desc || '').length ? a.desc : b.desc,
+    desc: description.desc, descriptionSource: description.descriptionSource, previewAtSource: a.previewAtSource || b.previewAtSource,
     availability: /free|read|borrow|preview/i.test(a.availability) ? a.availability : b.availability,
     authors: dedupeAuthors([...(a.authors || []), ...(b.authors || [])]),
     subjects: uniq([a.subjects, b.subjects]).slice(0, 16), ids: uniq([a.ids, b.ids]), langs: uniq([a.langs, b.langs]),
@@ -864,6 +850,7 @@ function hero() {
   return `<section class="hero"><div class="wrap"><p class="eyebrow">Discover your next read</p><h1>Find a book. Make it yours.</h1><p class="lede">Search across book catalogs and public-domain libraries. Save available full texts for reading here, or keep discoveries on your shelf.</p>
     <form class="search" data-form><div class="search-field">${ICON.search}<input name="q" value="${esc(state.query)}" placeholder="Search title, author, subject, or ISBN…" autocomplete="off" /></div><button class="btn-primary" ${state.loading ? 'disabled' : ''}>${state.loading ? 'Searching…' : 'Search'}</button></form>
     ${sourceOn('Google Books') ? `<div class="search-attribution">${googleAttribution()}</div>` : ''}
+    <p class="catalog-note"><a href="https://core.ac.uk/" target="_blank" rel="noopener noreferrer">Search CORE at its source ${ICON.ext}</a></p>
     <div class="samples">${SAMPLES.map(q => `<button data-query="${esc(q)}">${esc(q)}</button>`).join('')}</div></div></section>`;
 }
 
@@ -1002,7 +989,7 @@ function sourcesTab() {
   };
   return `<section class="section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Source control</p><h2>${onCount} of ${live.length} catalogs enabled.</h2><p>${summary}</p></div>
       <div class="src-bulk"><button data-src-all="on">Enable all</button><button data-src-all="fast">Fast only</button></div></div>
-    <div class="sources">${SOURCES.filter(s => s.live || s.name === "WorldCat").map(s => `<article class="${s.live && !sourceOn(s.name) ? 'is-off' : ''}"><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? `<label class="src-toggle" title="${sourceOn(s.name) ? 'Searching this catalog' : 'Skipping this catalog'}"><input type="checkbox" data-src="${esc(s.name)}" ${sourceOn(s.name) ? 'checked' : ''} /><span class="switch"></span></label>` : '<span class="priority">Library lookup</span>'}</div><h3>${esc(s.name)}</h3><div class="src-line"><span class="src-role">${esc(s.priority)}</span>${s.live ? statOf(s) : ''}</div><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">Docs ${ICON.ext}</a></article>`).join('')}</div>
+    <div class="sources">${SOURCES.filter(s => s.live || s.linkOnly || s.name === "WorldCat").map(s => `<article class="${s.live && !sourceOn(s.name) ? 'is-off' : ''}"><div class="top"><span class="badge">${esc(s.badge)}</span>${s.live ? `<label class="src-toggle" title="${sourceOn(s.name) ? 'Searching this catalog' : 'Skipping this catalog'}"><input type="checkbox" data-src="${esc(s.name)}" ${sourceOn(s.name) ? 'checked' : ''} /><span class="switch"></span></label>` : `<span class="priority">${s.linkOnly ? 'Source website' : 'Library lookup'}</span>`}</div><h3>${esc(s.name)}</h3><div class="src-line"><span class="src-role">${esc(s.priority)}</span>${s.live ? statOf(s) : ''}</div><p>${esc(s.coverage)}</p><div class="chips">${s.best.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div><span class="access">${esc(s.access)}</span><a href="${esc(s.url)}" target="_blank" rel="noreferrer">${s.linkOnly ? 'Search at source' : 'Docs'} ${ICON.ext}</a></article>`).join('')}</div>
     <div class="suggest-box" style="margin-top:44px">
       <div class="titles"><p class="eyebrow">Missing something?</p><h2>Suggest a source.</h2><p>Know an open catalog, national library, or book API Librarian should federate? Name it (and a link if you have one) and it goes straight to the project’s issue tracker.</p></div>
       <form class="suggest-form" data-suggest-form>
@@ -1046,7 +1033,7 @@ function modal() {
         ${b.desc ? `<p class="modal-desc">${esc(b.desc)}</p>` : ''}
         ${b.subjects?.length ? `<div class="modal-section"><h4>Subjects</h4><div class="chips" style="display:flex;flex-wrap:wrap;gap:6px">${uniq(b.subjects).slice(0, 10).map(s => `<span class="chip">${esc(s)}</span>`).join('')}</div></div>` : ''}
         ${ids.length ? `<div class="modal-section"><h4>Identifiers</h4><div class="id-list">${ids.map(i => `<code>${esc(i)}</code>`).join('')}</div></div>` : ''}
-        ${links.length ? `<div class="modal-section"><h4>Sources · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
+        ${links.length ? `<div class="modal-section"><h4>${b.previewAtSource ? 'Previews & descriptions at source' : 'Sources'} · ${esc(uniq(b.sources).join(', '))}</h4><div class="link-list">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)} ${ICON.ext}</a>`).join('')}</div></div>` : ''}
         ${b.work ? `<div class="modal-section"><h4>Editions</h4><button class="btn-ghost" data-editions="${esc(b.work)}">${ICON.stack} Show all editions</button><div class="editions"></div></div>` : ''}
         <div class="modal-actions"><button class="btn-ghost ${saved ? 'is-saved' : ''}" data-save="${esc(b.id)}">${saved ? ICON.bookmarkFill : ICON.bookmark} ${saved ? 'Saved' : 'Save to shelf'}</button>${readableLink(b) ? `<button class="btn-primary" data-read-result ${b._pdfBusy ? 'disabled' : ''}>${b._pdfBusy ? 'Saving…' : 'Read in Librarian'}</button><button class="btn-ghost" data-save-pdf ${b._pdfBusy ? 'disabled' : ''}>Save for offline</button>` : '<p class="ai-note">Open the source to read, borrow, or check download options. In-app downloads require a confirmed CC0 or CC BY 4.0 license for this edition. You can also import your own PDFs from Files.</p>'}</div>
         ${state.shelfError ? `<p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p>` : ''}
