@@ -74,3 +74,17 @@ Best starting stack:
 3. Internet Archive for availability and public-domain/full-text links.
 4. Gutenberg/Standard Ebooks/LibriVox for free reading/listening layers.
 5. Google Books only as an enrichment layer, not the commercial backbone.
+
+## Curated digital collections (incremental web feature)
+
+`/?collections=1` opens the curator workspace. It uses verified Supabase email
+accounts, server-mediated collection metadata, and a private Supabase Storage
+bucket for uploaded PDFs. A share link is `/?collection=<slug>`; guests can open
+public and unlisted collections without an account. Local-only PDF imports and
+the existing reader remain available from the original Library section.
+
+See [`docs/collections.md`](docs/collections.md) for the migration, server
+configuration, quota/security model, verification evidence, and remaining rollout
+gaps. The feature is not production-ready until the migration and server env are
+configured in the intended Supabase/Netlify projects and a real verified curator
+account completes the live workflow in a browser.
