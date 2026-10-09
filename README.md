@@ -24,7 +24,8 @@ Keyless, CORS-friendly sources are called directly from the browser. Keyed or no
 ### Tabs
 
 - **Search** — the federated search and results.
-- **AI Librarian** — drafts a reading path from your saved shelf. This is an *offline heuristic template*, not a live model; it reflects your question and shelf categories. Wire it to an API for generative answers.
+- **Library** — import your PDFs, read them and keep reading progress locally.
+- **AI Librarian (not exposed in the current navigation)** — dormant client/server recommendation code remains, but the app has no account/session integration. It is not an offline heuristic and must not be advertised as available. The server requires a verified Momentium account and a durable quota check before any configured provider call. Guest search, shelf and local PDF reading do not require this feature.
 - **Sources** — the ranked source map and the ingest → resolve → enrich → explore architecture.
 - **Shelf** — your locally saved books.
 
@@ -50,6 +51,15 @@ npm run build && netlify deploy --prod --dir=dist
 ```
 
 Set the proxy API keys as Netlify env vars (`DPLA_KEY`, `EUROPEANA_KEY`, `CORE_KEY`) or in a gitignored `netlify/functions/_keys.mjs`.
+
+Do not deploy a partial local snapshot over a live site: first reconcile published assets, functions and configuration with the intended source. A successful frontend build does not recover production proxy configuration or prove the currently published PDF reader assets are present. Follow required PR/check gates.
+
+### Recommendation service prerequisites
+
+Before making the hidden AI feature reachable, integrate the approved account/login session flow (including expiry and sign-out) and send its session Bearer token to the protected function. No such client integration currently exists. Never accept a service-role key in the browser, fabricate a session, or remove the server guard to enable recommendations.
+
+The server additionally needs `LIBRARIAN_AI_ENABLED=true`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, server-only `SUPABASE_SERVICE_ROLE_KEY`, the durable `consume_librarian_ai_quota` RPC, and existing provider configuration. Unconfigured, expired, unverified and quota-denied requests fail closed. Configure only approved deployments; do not put credential values in source. Verified-account end-to-end recommendations remain unqualified until authorized test access and this integration exist.
+
 
 ## Research
 

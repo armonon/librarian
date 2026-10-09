@@ -54,3 +54,23 @@ test('unverified accounts, malformed payloads, public diagnostics and quota fail
     await assert.rejects(guard(make(body)), { status: expected });
   }
 });
+
+test('expired sessions and account-service failures stop before quota', async () => {
+  for (const [status, expected] of [[401, 401], [403, 401], [429, 503], [500, 503]]) {
+    let calls = 0;
+    const guard = createAiGuard({ env, fetcher: async () => { calls++; return new Response(null, { status }); } });
+    await assert.rejects(guard(make()), { status: expected });
+    assert.equal(calls, 1, 'a failed account check must never consume quota');
+  }
+  const unavailable = createAiGuard({ env, fetcher: async () => { throw new Error('offline'); } });
+  await assert.rejects(unavailable(make()), { status: 503 });
+});
+
+test('missing or malformed bearer cannot reach the account or quota service', async () => {
+  let calls = 0;
+  const guard = createAiGuard({ env, fetcher: async () => { calls++; throw new Error('not permitted'); } });
+  for (const authorization of ['', 'Basic abcdefghijklmnopqrstuvwxyz', 'Bearer short', 'Bearer ' + 'x'.repeat(8193)]) {
+    await assert.rejects(guard(make(undefined, { authorization })), { status: 401 });
+  }
+  assert.equal(calls, 0);
+});
