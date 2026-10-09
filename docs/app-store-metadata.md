@@ -1,9 +1,10 @@
 # Librarian 1.0 — App Store submission draft
 
-Status: build 8 is the source-link display candidate. Build 7 remains attached
-until build 8 can be processed and selected in App Store Connect. Browser access
-currently requires sign-in. This file is the updated copy to save after sign-in;
-it is not evidence that Apple has accepted or published it.
+Status: build 8 is processed, attached and saved on version 1.0. Export compliance
+is cleared. The description and review notes now describe source-link previews
+and CORE website access. Apple's latest validation lists Content Rights only.
+The owner declaration is open and unselected; no App Review submission or release
+has occurred. Verification: October 8, 2026.
 
 - Name: Librarian: Books & PDFs (Librarian was unavailable)
 - App Store Connect: https://appstoreconnect.apple.com/apps/6819934484/distribution

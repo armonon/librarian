@@ -217,3 +217,22 @@ The signed IPA reports CFBundleVersion 8. Xcode reports Upload succeeded and
 EXPORT SUCCEEDED at 17:07 PDT October 8. Processing, export questionnaire,
 build selection and metadata updates still require restored App Store Connect
 browser access; no App Review submission or release occurred.
+
+
+## Build 8 App Store verification — October 8
+
+Browser sign-in restored. Build UUID `d2ab2755-bfc0-4b6d-ad38-61969d352fd6`
+processed successfully. Standard encryption outside Apple OS and no France
+answers are saved; TestFlight shows Ready to Submit. Build 8 replaced build 7
+on version 1.0 and the selection is saved. Description/review notes now disclose
+the source-link display policy, 14 catalog fetchers and CORE website access.
+
+Fresh Add for Review validation lists Content Rights Information only. The exact
+owner statement is: “Yes, it contains, shows, or accesses third-party content,
+and I have the necessary rights.” The form also requires permission under the
+laws of each distribution region. The form is open with neither answer selected.
+Owner confirmation is pending; the technical changes are not a blanket legal
+clearance of every upstream API or catalog. Physical-device and EU DSA checks
+remain separately documented. No App Review submission or release occurred.
+Proof: releases/ios-1.0-8/release-validation.png and
+releases/ios-1.0-8/content-rights-declaration.png (both ignored).
