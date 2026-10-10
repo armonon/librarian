@@ -26,7 +26,7 @@ export function registerServiceWorker() {
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading) location.reload(); });
   const offerUpdate = worker => toast('Update available.', 'Reload', () => { reloading = true; worker.postMessage({ type: 'SKIP_WAITING' }); });
-  window.addEventListener('load', () => {
+  const register = () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       if (reg.waiting && hadController) offerUpdate(reg.waiting);
       reg.addEventListener('updatefound', () => {
@@ -39,7 +39,10 @@ export function registerServiceWorker() {
       });
       setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
     }).catch(() => {});
-  });
+  };
+  // The collections entry dynamically imports the reading room after load.
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register, { once: true });
 }
 
 export function loadSuiteKit() {

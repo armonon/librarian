@@ -73,9 +73,11 @@ const base = remote || local.base;
 console.log(`${remote ? 'remote site' : 'local static server'} at ${base}`);
 
 const consoleErrors = [];
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.LIBRARIAN_CHROMIUM_PATH ? { executablePath: process.env.LIBRARIAN_CHROMIUM_PATH } : {});
 try {
   const context = await browser.newContext();
+  // Keep local app qualification independent of the optional font CDN.
+  if (!remote) await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ contentType: 'text/css', body: '' }));
   const page = await context.newPage();
   page.on('console', m => { if (m.type() === 'error' && !isSuiteKit(m.location().url)) consoleErrors.push(`${m.text()} @ ${m.location().url}`); });
   page.on('pageerror', e => consoleErrors.push(String(e)));
