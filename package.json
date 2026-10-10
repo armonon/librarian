@@ -18,7 +18,8 @@
     "electron": "electron .",
     "mac:pack": "npm run build && electron-builder --mac dir",
     "mac:dist": "npm run build && electron-builder --mac",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "pwa-check": "node scripts/pwa-check.mjs"
   },
   "build": {
     "appId": "com.armonon.librarian",

@@ -426,3 +426,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .google-results { margin-bottom: 32px; }
 .google-source-link { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; line-height: 1.5; margin: 8px 0; text-decoration: underline; overflow-wrap: anywhere; }
 .google-source-link svg { flex-shrink: 0; width: 14px; height: 14px; }
+/* PWA update/offline toast (src/pwa.js) */
+.pwa-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 80; display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100% - 28px); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 14px; padding: 10px 12px 10px 16px; box-shadow: 0 14px 44px rgba(0,0,0,0.55); font-size: 0.9rem; color: var(--text); line-height: 1.4; }
+.pwa-toast .btn-primary { padding: 7px 14px; }
+.pwa-toast-x { background: none; border: 0; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 2px 6px; }
+/* thecreateco suite menu slot (kit renders into <tcc-suite-menu>; empty if the kit is absent) */
+.suite-slot { display: inline-flex; align-items: center; flex: none; margin-left: 10px; align-self: center; }
+tcc-suite-menu { display: inline-block; width: 36px; height: 36px; flex: none; color: var(--text); } /* box reserved: no shift when the kit loads */
