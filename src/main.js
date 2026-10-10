@@ -12,6 +12,7 @@ import { libraryItems, readableLink, readingPage, validatePdf, textPages } from 
 import { loadPdfjs, pdfOptions } from './pdf-reader.js';
 import { pdfSave, pdfLibrary, pdfGet, pdfDel, pdfUpdate } from './pdf-storage.js';
 import { pdfDownload } from './pdf-download.js';
+import { registerServiceWorker, loadSuiteKit, locker, whenLocker } from './pwa.js';
 
 const SOURCES = [
   { name: 'Open Library', badge: 'core', priority: 'Index backbone', live: true, url: 'https://openlibrary.org/developers/api', coverage: 'Open works, editions, ISBNs, authors, subjects, covers, ratings, and Internet Archive read/borrow links.', access: 'Free API, keyless. Powers the editions expander.', best: ['works + editions', 'covers', 'ISBNs', 'subjects'] },
@@ -101,9 +102,10 @@ function fmtSize(n = 0) { return n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` 
 const uid = () => `pdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 async function importPdfs(files) {
-  if (state.importing) return;
+  const added = [];
+  if (state.importing) return added;
   const pdfs = [...files].filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-  if (!pdfs.length) { state.libError = 'Those weren’t PDFs. Add .pdf files.'; render(); return; }
+  if (!pdfs.length) { state.libError = 'Those weren’t PDFs. Add .pdf files.'; render(); return added; }
   state.importing = true; state.libError = ''; render();
   try {
     await libraryReady;
@@ -114,9 +116,34 @@ async function importPdfs(files) {
         await validatePdf(f);
         await pdfSave(metadata, f);
         state.library.unshift(metadata);
+        added.push(metadata);
       } catch (error) { state.libError = `Some PDFs could not be saved. ${error.message || 'Storage may be full or blocked.'} Keep the originals and try again.`; }
     }
   } finally { state.importing = false; render(); }
+  return added;
+}
+
+/* ---------- Locker (thecreateco suite kit, optional) ---------- */
+// Save a library PDF to Locker. Called straight from the click: off thecreatingco.com
+// the kit may need a popup handoff, which browsers only allow on a user gesture.
+async function saveToLocker(id) {
+  const l = locker(); const meta = state.library.find(item => item.id === id);
+  if (!l || !meta) return;
+  try {
+    const result = pdfDownload(await pdfGet(id), meta.title);
+    await l.save({ name: result.name, type: 'application/pdf', blob: result.blob, meta: { title: meta.title, author: meta.author || '', source: meta.source || '' } });
+    state.libError = ''; state.libNotice = `Saved “${meta.title}” to Locker (stored in this browser on this device).`;
+  } catch (error) { state.libNotice = ''; state.libError = `Locker: ${error?.message || 'could not save this PDF.'}`; }
+  render();
+}
+// Opened from Locker (?tcc-open=<id>): a PDF is added to the Library and opened in the reader.
+async function openFromLocker(entry) {
+  const isPdf = entry && entry.blob && (entry.type === 'application/pdf' || /\.pdf$/i.test(entry.name || ''));
+  state.tab = 'library';
+  if (!isPdf) { state.libError = `${entry?.name || 'That file'} isn’t a PDF — Librarian opens PDFs from Locker.`; render(); return; }
+  const name = /\.pdf$/i.test(entry.name) ? entry.name : `${entry.name || 'Locker file'}.pdf`;
+  const [added] = await importPdfs([new File([entry.blob], name, { type: 'application/pdf' })]);
+  if (added) { state.libNotice = `Opened “${added.title}” from Locker — it’s now in your Library.`; openReader(added.id); }
 }
 async function removePdf(id) {
   const book = state.library.find(item => item.id === id);
@@ -843,7 +870,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}${tab('privacy', 'Help')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span>${NATIVE ? '' : '<span class="suite-slot" data-suite-slot></span>'}</div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}<a class="collections-nav" href="/?collections=1">Collections</a>${tab('privacy', 'Help')}</nav></div></header>`;
 }
 
 function hero() {
@@ -944,12 +971,13 @@ function libraryTab() {
       <span class="reading-state">${p.finished ? 'Finished' : p.lastReadAt ? `Page ${p.page || 1} of ${p.totalPages || '…'}` : 'Ready to read'} · Available offline</span>
       ${[CC0, CC_BY].includes(p.licenseUrl) ? `<span class="pdf-meta"><a href="${esc(p.sourceUrl)}" target="_blank" rel="noopener noreferrer">Original source</a> · <a href="${esc(p.licenseUrl)}" target="_blank" rel="noopener noreferrer">${p.licenseUrl === CC0 ? 'CC0' : 'CC BY 4.0'} license</a></span>` : ''}
       ${p.totalPages ? `<progress value="${p.finished ? p.totalPages : p.page || 1}" max="${p.totalPages}" aria-label="Reading progress"></progress>` : ''}
-      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} ${p.lastReadAt ? 'Resume' : 'Read'}</button><button data-download-pdf="${esc(p.id)}">${NATIVE ? 'Save / Share' : p.format === 'text' ? 'Download text' : 'Download PDF'}</button><button data-finished="${esc(p.id)}">${p.finished ? 'Mark unread' : 'Mark finished'}</button><button data-del-pdf="${esc(p.id)}" aria-label="Remove ${esc(p.title)}">${ICON.trash} Remove</button></div>
+      <div class="pdf-actions"><button data-read="${esc(p.id)}">${ICON.read} ${p.lastReadAt ? 'Resume' : 'Read'}</button><button data-download-pdf="${esc(p.id)}">${NATIVE ? 'Save / Share' : p.format === 'text' ? 'Download text' : 'Download PDF'}</button><button data-finished="${esc(p.id)}">${p.finished ? 'Mark unread' : 'Mark finished'}</button>${!NATIVE && p.format !== 'text' && locker() ? `<button data-locker-pdf="${esc(p.id)}">Save to Locker</button>` : ''}<button data-del-pdf="${esc(p.id)}" aria-label="Remove ${esc(p.title)}">${ICON.trash} Remove</button></div>
     </div></article>`).join('');
   return `<section class="section library-section"><div class="wrap"><div class="section-head"><div class="titles"><p class="eyebrow">Your personal library</p><h2>${state.library.length ? "Your library." : "A little space for<br>your next great read."}</h2><p>${state.library.length ? "Your books, your place, your pace. Everything here is saved on this device." : "Discover a book, bring your PDFs, and pick up where you left off. Your saved books stay on this device for offline reading."}</p></div>
       <div class="library-add"><button class="btn-primary" data-import-open>${ICON.upload} Add PDFs</button><input type="file" accept="application/pdf,.pdf" multiple data-import hidden ${state.importing ? 'disabled' : ''} /><button class="btn-ghost" data-tab="search">Find a book ${ICON.search}</button></div></div>
     ${state.importing ? '<p class="notice" role="status">Adding your PDFs…</p>' : ''}
     ${state.libError ? `<p class="notice" role="alert">${esc(state.libError)}</p>` : ''}
+    ${state.libNotice ? `<p class="notice" role="status">${esc(state.libNotice)}</p>` : ''}
     ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a>${readyPdfDownload.creditsUrl ? ` · <a href="${esc(readyPdfDownload.creditsUrl)}" download="${esc(readyPdfDownload.name)}.attribution.txt">Save attribution</a>` : ''}</p>` : ''}
     ${recent && !state.libraryQuery && state.libraryFilter === 'all' ? `<div class="continue-reading"><div><p class="eyebrow">Continue reading</p><h3>${esc(recent.title)}</h3><p>${esc(recent.author || recent.source)} · Page ${recent.page || 1} of ${recent.totalPages || '…'}</p></div><button class="btn-primary" data-read="${esc(recent.id)}">Pick up where you left off ${ICON.read}</button></div>` : ''}
     <div class="library-tools"><div class="library-filters" role="group" aria-label="Reading status">${[['all', 'All books'], ['reading', 'Reading'], ['unread', 'Unread'], ['finished', 'Finished']].map(([value, label]) => `<button data-library-filter="${value}" aria-pressed="${state.libraryFilter === value}">${label}</button>`).join('')}</div><span class="library-count">${state.library.length} saved</span></div>
@@ -1054,7 +1082,9 @@ function activeTab() {
   return searchTab();
 }
 
-function render() { if (state.reader?.painted && document.querySelector("#pdf-reader")) return; app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; bind(); if (state.reader && !state.reader.painted) paintReader(); }
+const suiteMenu = NATIVE ? null : document.createElement('tcc-suite-menu');
+function placeSuiteMenu() { const slot = suiteMenu && document.querySelector('[data-suite-slot]'); if (slot && suiteMenu.parentNode !== slot) slot.append(suiteMenu); }
+function render() { if (state.reader?.painted && document.querySelector("#pdf-reader")) return; suiteMenu?.remove(); app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; placeSuiteMenu(); bind(); if (state.reader && !state.reader.painted) paintReader(); }
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
@@ -1076,6 +1106,7 @@ function bind() {
   document.querySelectorAll('[data-import]').forEach(el => el.onchange = e => { const f = e.target.files; if (f && f.length) importPdfs(f); e.target.value = ''; });
   document.querySelectorAll('[data-read]').forEach(el => el.onclick = e => { e.stopPropagation(); openReader(el.dataset.read); });
   document.querySelectorAll('[data-download-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void downloadPdf(el.dataset.downloadPdf); });
+  document.querySelectorAll('[data-locker-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); void saveToLocker(el.dataset.lockerPdf); });
   document.querySelectorAll('[data-del-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); removePdf(el.dataset.delPdf); });
   document.querySelectorAll('[data-save-pdf]').forEach(el => el.onclick = e => { e.stopPropagation(); const b = state.selected; if (b) saveResultPdf(b); });
   document.querySelector('[data-check-download]')?.addEventListener('click', () => { if (state.selected) void checkDownloadLicense(state.selected); });
@@ -1122,7 +1153,14 @@ const initialQuery = new URLSearchParams(location.search).get('q');
 render();
 if (initialQuery) search(initialQuery);
 
-if (!NATIVE && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+if (!NATIVE) {
+  registerServiceWorker();
+  loadSuiteKit();
+  whenLocker(l => {
+    render(); // reveal "Save to Locker" buttons
+    l.onOpen(entry => { void openFromLocker(entry); }); // fires only for ?tcc-open= launches (replayed to late handlers)
+  });
+}
 
 /* ---------- PWA install affordance ---------- */
 let deferredInstall = null;

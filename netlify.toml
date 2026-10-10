@@ -1,4 +1,6 @@
 [build]
+  # Preserve live function bundles until all runtime dependencies are available.
+  ignore = "node scripts/netlify-promotion-guard.mjs"
   command = "npm run build"
   publish = "dist"
 
