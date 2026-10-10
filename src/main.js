@@ -843,7 +843,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}${tab('privacy', 'Help')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span></div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}<a class="collections-nav" href="/?collections=1">Collections</a>${tab('privacy', 'Help')}</nav></div></header>`;
 }
 
 function hero() {

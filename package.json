@@ -58,7 +58,8 @@
     "@capacitor/core": "^8.5.2",
     "@capacitor/filesystem": "^8.1.4",
     "@capacitor/ios": "^8.5.2",
-    "@capacitor/share": "^8.0.3"
+    "@capacitor/share": "^8.0.3",
+    "qrcode": "^1.5.4"
   },
   "overrides": {
     "@capacitor/assets": {
