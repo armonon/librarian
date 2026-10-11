@@ -46,7 +46,7 @@ export function registerServiceWorker() {
 }
 
 export function loadSuiteKit() {
-  if (document.querySelector(`script[src="${SUITE_SRC}"]`)) return;
+  if (document.querySelector(`script[src^="${SUITE_SRC}"]`)) return;
   const s = document.createElement('script');
   s.src = SUITE_SRC; s.defer = true; s.dataset.app = 'librarian';
   s.onerror = () => {}; // optional: offline or unreachable is fine

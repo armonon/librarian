@@ -1,0 +1,13 @@
+create role anon;
+create role authenticated;
+create schema auth;
+create schema storage;
+create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,is_anonymous boolean default false);
+create table auth.mfa_factors(user_id uuid references auth.users(id),status text);
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.user_id',true),'')::uuid $$;
+create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text);
+alter table storage.objects enable row level security;
+grant usage on schema public,auth,storage to anon,authenticated;
+grant select,insert,update,delete on storage.objects to authenticated;
+grant select on storage.objects to anon;

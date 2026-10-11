@@ -1,65 +1,67 @@
-import { test, expect } from '@playwright/test';
-
-function samplePdf() {
-  const content = 'BT /F1 18 Tf 72 720 Td (Hello Librarian) Tj ET';
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
-  ];
-  let pdf = '%PDF-1.4\n'; const offsets = [0];
-  objects.forEach((object, index) => { offsets.push(new TextEncoder().encode(pdf).length); pdf += `${index+1} 0 obj\n${object}\nendobj\n`; });
-  const xref = new TextEncoder().encode(pdf).length;
-  pdf += `xref\n0 ${objects.length+1}\n0000000000 65535 f \n${offsets.slice(1).map(n=>`${String(n).padStart(10,'0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return Buffer.from(pdf);
+import {test,expect} from '@playwright/test';
+import {pdfFixture} from './pdf-fixture.js';
+const library='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', book='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', user='11111111-1111-4111-8111-111111111111';
+const room={id:library,owner_id:user,title:'The astronomy room',curator:'Mira',description:'A small universe of ideas.',bio:'Reading the night sky.',topic:'Science',theme:'midnight',layout:'shelves',visibility:'public',published:true};
+const pdf={id:book,collection_id:library,title:'A book of stars',author:'A. Reader',description:'Begin with the sky.',shelf:'Start here',color:'#36563f',position:0,size:pdfFixture().length};
+async function mock(page,{enabled=true,initial=room}={}){
+ let current={...initial,books:[{...pdf}]},following=[],saved=[];const calls=[];
+ await page.route('**/.netlify/functions/collections?**',async route=>{
+  const url=new URL(route.request().url()),action=url.searchParams.get('action'),method=route.request().method();calls.push({action,method});
+  let data;
+  if(action==='config')data={enabled};
+  else if(action==='browse')data=current.published&&current.visibility==='public'?[current]:[];
+  else if(action==='mine')data=route.request().headers().authorization?[current]:[];
+  else if(action==='social')data={following,saved};
+  else if(action==='collection')data=current;
+  else if(action==='members')data=[];
+  else if(action==='send-code')data={sent:true};
+  else if(action==='verify-code')data={access_token:'token-at-least-twenty-characters',refresh_token:'refresh',expires_at:Math.floor(Date.now()/1000)+3600,user:{id:user,email:'mira@example.test'}};
+  else if(action==='create'){current={...route.request().postDataJSON(),id:library,owner_id:user,books:[],published:false,local:false};data=current;}
+  else if(action==='upload'){const next={...pdf,title:url.searchParams.get('title')};current.books.push(next);data=next;}
+  else if(action==='book'&&method==='PATCH'){current.books=current.books.map(b=>b.id===url.searchParams.get('book')?{...b,...route.request().postDataJSON()}:b);data=current.books[0];}
+  else if(action==='update'){const body=route.request().postDataJSON();for(const key of ['title','curator','description','bio','topic','theme','layout','visibility','published'])if(key in body)current[key]=body[key];data=current;}
+  else if(action==='read')return route.fulfill({contentType:'application/pdf',body:pdfFixture()});
+  else if(action==='follow'){following=method==='POST'?[{collection_id:library,librarian_collections:current}]:[];data={ok:true};}
+  else if(action==='save'){saved=method==='POST'?[{collection_id:library,librarian_collections:current}]:[];data={ok:true};}
+  else data={ok:true};
+  return route.fulfill({json:data});
+ });return calls;
 }
-
-test('guest opens a public collection and reads a PDF with the mobile reader', async ({ page }) => {
-  const bytes = samplePdf();
-  await page.route('**/.netlify/functions/collection-config', route => route.fulfill({ json: { supabaseUrl:'https://accounts.example.test', publishableKey:'public-test-key' } }));
-  await page.route('**/.netlify/functions/collections?slug=field-notes', route => route.fulfill({ json: { collection:{ id:'11111111-1111-4111-8111-111111111111',title:'Field Notes',slug:'field-notes',description:'A small test library.',visibility:'public',theme:'linen' }, books:[{ id:'22222222-2222-4222-8222-222222222222',title:'Hello Reader',author:'Test Curator',tags:['notes'],page_count:1,thumbnail_data:'' }] } }));
-  await page.route('**/.netlify/functions/collection-files?action=read', route => route.fulfill({ json:{ book:{id:'22222222-2222-4222-8222-222222222222',title:'Hello Reader',author:'Test Curator'},url:'https://storage.example.test/book.pdf' } }));
-  await page.route('https://storage.example.test/book.pdf', route => route.fulfill({ status:200, contentType:'application/pdf', headers:{'access-control-allow-origin':'*','accept-ranges':'bytes'}, body:bytes }));
-
-  await page.goto('/?collection=field-notes');
-  await expect(page.getByRole('heading', { name:'Field Notes' })).toBeVisible();
-  await expect(page.getByText('Hello Reader')).toBeVisible();
-  await page.locator('[data-read="22222222-2222-4222-8222-222222222222"]').click();
-  await expect(page.getByRole('dialog', { name:/Hello Reader/ })).toBeVisible();
-  await expect(page.locator('[data-canvas]')).toHaveJSProperty('width', 703);
-  await expect(page.getByText('Page 1 / 1')).toBeVisible();
+test.beforeEach(async({page})=>{await page.addInitScript(()=>localStorage.setItem('librarian.installDismissed','1'));});
+test('draft design, PDF import, book editing and offline reading persist without a backend',async({page},info)=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));await mock(page,{enabled:false});
+ await page.goto('/?collections=1');await page.getByRole('button',{name:'Create a library',exact:true}).click();
+ await page.locator('[data-collection-design] input[name=title]').fill('My quiet library');
+ await page.locator('[data-collection-design] input[name=curator]').fill('Mira');
+ await page.locator('select[name=theme]').selectOption('forest');
+ await page.locator('select[name=layout]').selectOption('reading-path');
+ await page.getByRole('button',{name:'Save design',exact:true}).click();await expect(page.locator('.collection-room')).toHaveClass(/theme-forest/);
+ await page.locator('[data-collection-rights]').check();await page.locator('[data-collection-files]').setInputFiles({name:'A book of stars.pdf',mimeType:'application/pdf',buffer:pdfFixture()});
+ await expect(page.locator('.collection-book')).toHaveCount(1);
+ await page.locator('[data-collection-edit-book]').click();await page.locator('[data-collection-book] input[name=author]').fill('A. Reader');await page.getByRole('button',{name:'Save book',exact:true}).click();
+ await page.locator('.collection-book-actions [data-collection-read]').click();await expect(page.locator('.pdf-page').first()).toBeVisible();
+ await page.locator('[data-page-number]').fill('2');await page.locator('[data-page-form] button').click();await page.locator('[data-bookmark-page]').click();await page.locator('[data-reader-close]').click();
+ await page.reload();await page.getByRole('button',{name:'Your libraries',exact:true}).click();await page.locator('.collection-card').click();
+ await expect(page.locator('.collection-book')).toContainText('A. Reader');await page.locator('.collection-book-actions [data-collection-read]').click();await expect(page.locator('[data-page-number]')).toHaveValue('2');await expect(page.locator('[data-bookmark-page]')).toHaveAttribute('aria-pressed','true');await page.locator('[data-reader-close]').click();
+ await page.getByRole('button',{name:'Publish library',exact:true}).click();await expect(page.getByRole('alert')).toContainText('Connect shared library storage');
+ await page.screenshot({path:`test-results/${info.project.name}-collection-draft.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
-
-test('curator signs in, creates a library, and securely uploads a validated PDF', async ({ page }) => {
-  const bytes = samplePdf(); let saved = null, uploaded = false;
-  await page.route('**/.netlify/functions/collection-config', route => route.fulfill({ json: { supabaseUrl:'https://accounts.example.test', publishableKey:'public-test-key' } }));
-  await page.route('https://accounts.example.test/auth/v1/signup', route => route.fulfill({ json:{access_token:'a'.repeat(30),refresh_token:'r'.repeat(30),user:{email:'curator@example.test'} } }));
-  await page.route('**/.netlify/functions/collections?mine=1', route => route.fulfill({ json:{collections:saved?[saved]:[]} }));
-  await page.route('**/.netlify/functions/collections*', async route => {
-    if (route.request().method()==='POST') { saved={id:'11111111-1111-4111-8111-111111111111',title:'Field Notes',slug:'field-notes',description:'A small archive',visibility:'unlisted',theme:'midnight'}; return route.fulfill({status:201,json:{collection:saved}}); }
-    if (route.request().url().includes('slug=field-notes')) return route.fulfill({json:{collection:saved,books:uploaded?[{id:'22222222-2222-4222-8222-222222222222',title:'Field notebook',author:'Ada Curator',tags:['archive'],sort_order:0,thumbnail_data:''}]:[]}});
-    return route.fulfill({json:{collections:[]} });
-  });
-  await page.route('**/.netlify/functions/collection-files?action=start', route => route.fulfill({status:201,json:{bookId:'22222222-2222-4222-8222-222222222222',uploadUrl:'https://storage.example.test/upload'}}));
-  await page.route('https://storage.example.test/upload', async route => { uploaded=true; await route.fulfill({status:200,json:{Key:'uploaded'}}); });
-  await page.route('**/.netlify/functions/collection-files?action=finish', route => route.fulfill({json:{ready:true}}));
-
-  await page.goto('/?collections=1');
-  await page.getByLabel('Email').fill('curator@example.test'); await page.getByLabel('Password').fill('correct-horse-9');
-  await page.getByRole('button',{name:'Create curator account'}).click();
-  await page.getByLabel('Collection title').fill('Field Notes'); await page.getByLabel('Custom URL slug').fill('field-notes');
-  await page.getByLabel('Description').fill('A small archive'); await page.getByLabel('Visibility').selectOption('unlisted'); await page.getByLabel('Theme').selectOption('midnight');
-  await page.getByRole('button',{name:'Create collection'}).click();
-  await page.getByRole('button',{name:'QR code'}).click();
-  await expect(page.getByRole('dialog',{name:'Share QR code'})).toBeVisible();
-  await expect(page.getByAltText('QR code for Field Notes')).toHaveAttribute('src',/^data:image\/png/);
-  await page.getByRole('button',{name:'Close QR code'}).click();
-  await page.getByLabel('Choose PDF').setInputFiles({name:'field-notebook.pdf',mimeType:'application/pdf',buffer:bytes});
-  await page.getByLabel('Author').fill('Ada Curator'); await page.getByLabel('Tags').fill('archive');
-  await page.getByLabel('I own this work or have permission to share this PDF.').check();
-  await page.getByRole('button',{name:'Add PDF'}).click();
-  await expect(page.getByText('Field notebook')).toBeVisible();
-  expect(uploaded).toBeTruthy();
+test('public share links allow guest reading and saving offline without an account',async({page},info)=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));const calls=await mock(page);
+ await page.goto(`/?collection=${library}`);await expect(page.locator('.collection-room h1')).toHaveText(room.title);
+ await page.locator('.collection-book-actions [data-collection-read]').click();await expect(page.locator('.pdf-page').first()).toBeVisible();await page.locator('[data-reader-close]').click();
+ await page.locator('[data-collection-offline]').click();await expect(page.getByRole('status')).toContainText('Saved to your offline library');
+ await page.getByRole('button',{name:'Follow library',exact:true}).click();await expect(page.locator('[data-collection-auth]')).toBeVisible();expect(calls.some(c=>c.action==='follow')).toBe(false);
+ await page.locator('[data-tab=library]').click();await expect(page.locator('.pdf-card')).toContainText(pdf.title);await page.locator('.pdf-actions [data-read]').click();await expect(page.locator('.pdf-page').first()).toBeVisible();await page.locator('[data-reader-close]').click();
+ await page.locator('[data-tab=collections]').click();await page.getByRole('button',{name:'Cancel',exact:true}).click();await page.screenshot({path:`test-results/${info.project.name}-collection-public.png`,fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
+test('curator verifies email, publishes a draft, follows and saves its shared room',async({page})=>{
+ const calls=await mock(page);await page.goto('/?collections=1');await page.getByRole('button',{name:'Create a library',exact:true}).click();
+ await page.locator('[data-collection-design] input[name=title]').fill('Published room');await page.getByRole('button',{name:'Save design',exact:true}).click();
+ await page.locator('[data-collection-rights]').check();await page.locator('[data-collection-files]').setInputFiles({name:'Stars.pdf',mimeType:'application/pdf',buffer:pdfFixture()});await expect(page.locator('.collection-book')).toHaveCount(1);
+ await page.getByRole('button',{name:'Publish library',exact:true}).click();await page.locator('[data-collection-auth] input[name=email]').fill('mira@example.test');await page.getByRole('button',{name:'Send email code',exact:true}).click();
+ await page.locator('[data-collection-auth] input[name=code]').fill('00123456');await page.getByRole('button',{name:'Verify and sign in',exact:true}).click();await expect(page.locator('[data-collection-auth]')).toHaveCount(0);
+ await page.getByRole('button',{name:'Publish library',exact:true}).click();await expect(page.locator('.collection-state')).toContainText('Published');await expect(page).toHaveURL(new RegExp(`collection=${library}`));
+ await page.getByRole('button',{name:'Follow library',exact:true}).click();await expect(page.getByRole('button',{name:'Unfollow',exact:true})).toBeVisible();await page.getByRole('button',{name:'Save collection',exact:true}).click();await expect(page.getByRole('button',{name:'Unsave',exact:true})).toBeVisible();
+ expect(calls.filter(c=>c.action==='upload')).toHaveLength(1);expect(calls.some(c=>c.action==='update'&&c.method==='PATCH')).toBe(true);
 });

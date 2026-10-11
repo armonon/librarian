@@ -31,8 +31,20 @@ function pwaPrecache() {
 
 
 import bookText from './netlify/functions/book-text.mjs';
+import collections from './netlify/functions/collections.mjs';
 
 function readingEndpoint(server) {
+  server.middlewares.use('/.netlify/functions/collections', async (req, res) => {
+    try {
+      const request = new Request(`http://${req.headers.host}/.netlify/functions/collections${req.url.startsWith('?') ? req.url : new URL(req.url, 'http://localhost').search}`, {
+        method: req.method, headers: req.headers,
+        ...(!['GET', 'HEAD'].includes(req.method) ? { body: req, duplex: 'half' } : {}),
+      });
+      const response = await collections(request);
+      res.writeHead(response.status, Object.fromEntries(response.headers));
+      res.end(Buffer.from(await response.arrayBuffer()));
+    } catch { res.writeHead(503, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'Library service unavailable.' })); }
+  });
   server.middlewares.use('/.netlify/functions/book-text', async (req, res, next) => {
     if (req.method !== 'GET') return next();
     try {
