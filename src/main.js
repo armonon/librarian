@@ -1183,7 +1183,7 @@ if (!NATIVE) {
   registerServiceWorker();
   loadSuiteKit();
   whenLocker(l => {
-    render(); // reveal "Save to Locker" buttons
+    if (state.tab === 'library') render(); // reveal Locker controls without replacing an active Collections form
     l.onOpen(entry => { void openFromLocker(entry); }); // fires only for ?tcc-open= launches (replayed to late handlers)
   });
 }
