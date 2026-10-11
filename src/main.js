@@ -1,4 +1,5 @@
 import './styles.css';
+import { createCollections } from './collections.js';
 import { spacedRequests } from './request-spacing.js';
 import { CC0, CC_BY, openAlexDownloads, needsPublisherLicense, downloadCredits, shelfRecord, displayRecord } from './catalog-rights.js';
 import { parseGutenbergCatalog } from './gutenberg-catalog.js';
@@ -219,6 +220,13 @@ async function saveResultPdf(book, read = false) {
 }
 
 async function updateBook(id, changes) {
+  if (state.reader?.remote && state.reader.id === id) {
+    Object.assign(state.reader.meta, changes);
+    const saved = writePreference(`librarian.collection.progress.${id}`, JSON.stringify({ page: state.reader.meta.page, bookmarks: state.reader.meta.bookmarks || [], totalPages: state.reader.meta.totalPages }));
+    const notice = document.querySelector('[data-reader-status]');
+    if (notice) notice.textContent = saved === false ? 'Reading progress could not be saved on this device.' : '';
+    return state.reader.meta;
+  }
   try {
     const updated = await pdfUpdate(id, changes);
     state.library = state.library.map(item => item.id === id ? updated : item);
@@ -249,9 +257,9 @@ function closeReader() {
   state.reader = null;
   document.body.classList.remove('reading');
   render();
-  document.querySelector(`[data-read="${reader?.id}"]`)?.focus();
+  (document.querySelector(`[data-read="${reader?.id}"]`) || document.querySelector(`[data-collection-read="${reader?.id}"]`))?.focus();
 }
-function readerMeta() { return state.library.find(item => item.id === state.reader?.id); }
+function readerMeta() { return state.reader?.remote ? state.reader.meta : state.library.find(item => item.id === state.reader?.id); }
 function updateReaderControls() {
   const r = state.reader; if (!r) return;
   const total = r.pdf?.numPages || r.text?.length || 0;
@@ -347,7 +355,7 @@ async function paintReader() {
   const reader = state.reader;
   reader.painted = true;
   try {
-    const rec = await pdfGet(reader.id);
+    const rec = reader.remote ? { blob: reader.blob } : await pdfGet(reader.id);
     if (state.reader !== reader) return;
     if (!rec?.blob || !document.querySelector('#pdf-pages')) { if (box.isConnected) box.innerHTML = '<p class="reader-msg">File not found in storage.</p>'; return; }
     if (reader.format === 'text') {
@@ -361,7 +369,7 @@ async function paintReader() {
     if (state.reader !== reader) return;
     reader.loadingTask = lib.getDocument(pdfOptions(data));
     const pdf = await reader.loadingTask.promise;
-    if (state.reader !== reader) { await pdf.destroy(); return; }
+    if (state.reader !== reader) { await reader.loadingTask.destroy(); return; }
     reader.pdf = pdf;
     await layoutPages();
     if (state.reader !== reader) return;
@@ -870,7 +878,7 @@ async function askLibrarian(text) {
 /* ---------- views ---------- */
 function topbar() {
   const tab = (id, label, badge) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}">${label}${badge ? `<span class="count">${badge}</span>` : ''}</button>`;
-  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span>${NATIVE ? '' : '<span class="suite-slot" data-suite-slot></span>'}</div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}<a class="collections-nav" href="/?collections=1">Collections</a>${tab('privacy', 'Help')}</nav></div></header>`;
+  return `<header class="topbar"><div class="wrap"><div class="brand"><span class="mark">Librarian</span><span class="mark-tag">your reading room</span>${NATIVE ? '' : '<span class="suite-slot" data-suite-slot></span>'}</div><nav class="nav" aria-label="Sections">${tab('search', 'Discover')}${tab('library', 'Library', state.library.length || '')}${tab('collections', 'Collections')}${tab('sources', 'Sources')}${tab('profile', 'Shelf', state.saved.length || '')}${tab('privacy', 'Help')}</nav></div></header>`;
 }
 
 function hero() {
@@ -1075,6 +1083,7 @@ function modal() {
 
 function activeTab() {
   // AI Librarian temporarily hidden — keep aiTab() defined for easy re-enable.
+  if (state.tab === 'collections') return collections.view();
   if (state.tab === 'privacy') return privacySection();
   if (state.tab === 'library') return libraryTab();
   if (state.tab === 'sources') return sourcesTab();
@@ -1088,10 +1097,11 @@ function render() { if (state.reader?.painted && document.querySelector("#pdf-re
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
+  if (state.tab === 'collections') collections.bind(app);
   document.querySelector('[data-form]')?.addEventListener('submit', e => { e.preventDefault(); search(new FormData(e.currentTarget).get('q')); });
   document.querySelector('[data-ask-form]')?.addEventListener('submit', e => { e.preventDefault(); askLibrarian(new FormData(e.currentTarget).get('ask')); });
   document.querySelectorAll('[data-ask]').forEach(el => el.onclick = () => askLibrarian(el.dataset.ask));
-  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; window.scrollTo({ top: 0 }); render(); if (state.tab === 'profile') void refreshGoogleShelf(); });
+  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; window.scrollTo({ top: 0 }); render(); if (state.tab === 'profile') void refreshGoogleShelf(); if (state.tab === 'collections') void collections.init(); });
   document.querySelectorAll('[data-query]').forEach(el => el.onclick = () => { state.tab = 'search'; search(el.dataset.query); });
   document.querySelectorAll('[data-filter]').forEach(el => el.onchange = () => { state.filters[el.dataset.filter] = el.value; state.limit = PAGE_SIZE; repaintResults(); });
   document.querySelector('[data-more]')?.addEventListener('click', () => { state.limit += PAGE_SIZE; repaintResults(); });
@@ -1149,9 +1159,25 @@ async function loadEditions(work, btn) {
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (state.reader) closeReader(); else if (state.selected) { state.selected = null; render(); } } });
+const collections = createCollections({
+  base: FN_BASE, changed: () => { if (state.tab === 'collections') render(); },
+  localBooks: () => state.library,
+  imported: meta => { if (!state.library.some(b => b.id === meta.id)) state.library.unshift(meta); },
+  readBook: async (book, blob) => {
+    const progress = (() => { try { return JSON.parse(readPreference(`librarian.collection.progress.${book.id}`, '{}')); } catch { return {}; } })();
+    const meta = { ...book, ...progress };
+    state.selected = null;
+    state.reader = { id: book.id, title: book.title, format: 'pdf', page: readingPage(meta.page, meta.totalPages), remote: true, meta, blob, painted: false, io: null, layout: 0 };
+    document.body.classList.add('reading'); render(); document.querySelector('[data-reader-close]')?.focus();
+  },
+});
+const initialCollection = new URLSearchParams(location.search).get('collection');
+if (initialCollection || new URLSearchParams(location.search).has('collections')) state.tab = 'collections';
+window.addEventListener('popstate', () => { if (new URLSearchParams(location.search).has('collection')) { state.tab = 'collections'; render(); } });
 const initialQuery = new URLSearchParams(location.search).get('q');
 render();
-if (initialQuery) search(initialQuery);
+if (state.tab === 'collections') void collections.init();
+else if (initialQuery) search(initialQuery);
 
 if (!NATIVE) {
   registerServiceWorker();

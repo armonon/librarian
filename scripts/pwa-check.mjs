@@ -92,7 +92,7 @@ try {
   for (const i of icons) if (!(await page.request.get(new URL(i.src, base).toString())).ok()) fail(`icon ${i.src} does not resolve`);
   ok(`manifest "${manifest.name}" (standalone, ${icons.length} icons incl. maskable, all resolve)`);
   const swHeaders = (await page.request.get(new URL('/sw.js', base).toString())).headers();
-  if (!/no-cache/.test(swHeaders['cache-control'] || '')) fail(`/sw.js Cache-Control is "${swHeaders['cache-control']}", expected no-cache`); else ok('/sw.js served Cache-Control: no-cache');
+  if (!(/no-cache/.test(swHeaders['cache-control'] || '') || (/max-age=0/.test(swHeaders['cache-control'] || '') && /must-revalidate/.test(swHeaders['cache-control'] || '')))) fail(`/sw.js Cache-Control is "${swHeaders['cache-control']}", expected mandatory revalidation`); else ok('/sw.js requires network revalidation');
 
   await page.waitForFunction(() => navigator.serviceWorker.ready.then(() => true), null, { timeout: 20000 });
   await page.reload({ waitUntil: 'load' });

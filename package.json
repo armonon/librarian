@@ -19,6 +19,7 @@
     "mac:pack": "npm run build && electron-builder --mac dir",
     "mac:dist": "npm run build && electron-builder --mac",
     "test:browser": "playwright test",
+    "test:collections:db": "node scripts/test-collections-rls.mjs",
     "pwa-check": "node scripts/pwa-check.mjs"
   },
   "build": {
@@ -59,8 +60,7 @@
     "@capacitor/core": "^8.5.2",
     "@capacitor/filesystem": "^8.1.4",
     "@capacitor/ios": "^8.5.2",
-    "@capacitor/share": "^8.0.3",
-    "qrcode": "^1.5.4"
+    "@capacitor/share": "^8.0.3"
   },
   "overrides": {
     "@capacitor/assets": {

@@ -188,3 +188,9 @@ this is the owner's confirmation, not independent legal clearance. Version 1.0
 (build 8) submitted at 5:31 PM PDT. Apple shows Waiting for Review under
 submission d4f3875b-d665-4377-947a-094495bd064c. Automatic release is enabled;
 review approval/public availability remain pending.
+
+## Collections source changes — October 10, 2026
+
+The new Collections source adds optional verified-email accounts, uploaded PDFs, curator profile text, private/co-curated libraries, following, saved collections and content reports. Earlier statements that Librarian has no sign-in or user-generated/social content describe the prior binary and must not be reused for a Collections-enabled release.
+
+Before shipping a new binary with the hosted feature enabled, revise App Privacy and content/age-rating answers for account email and identifiers, uploaded user content, profiles, following/favorites, and content reports. Reading progress/bookmarks remain device-local. Disclose service storage and deletion workflows, qualify email delivery and private access on devices, and assign an operator to content-removal reports. Do not submit a new binary under the previous Data Not Collected declaration without this review. No App Store answers or submitted binaries have been changed by this source integration.
