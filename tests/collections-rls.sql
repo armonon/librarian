@@ -6,6 +6,9 @@ insert into auth.users(id,email,email_confirmed_at,is_anonymous) values
 set role authenticated;
 set app.user_id='11111111-1111-4111-8111-111111111111';
 insert into public.librarian_collections(id,owner_id,title,curator) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),'Owner library','Owner');
+do $$ begin
+ if not exists(select 1 from public.librarian_collections where id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') then raise exception 'Owner cannot read newly inserted draft in a separate request'; end if;
+end $$;
 insert into storage.objects(bucket_id,name) values('librarian-pdfs','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.pdf');
 insert into public.librarian_books(id,collection_id,title,storage_path,size,rights_confirmed) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','One book','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.pdf',100,true);
 update public.librarian_collections set published=true,visibility='public';
