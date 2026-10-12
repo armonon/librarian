@@ -1,4 +1,6 @@
 import './styles.css';
+import './workspace.css';
+import {paintLibraryCovers} from './library-covers.js';
 import { createCollections } from './collections.js';
 import { spacedRequests } from './request-spacing.js';
 import { CC0, CC_BY, openAlexDownloads, needsPublisherLicense, downloadCredits, shelfRecord, displayRecord } from './catalog-rights.js';
@@ -71,7 +73,7 @@ const PROXY = `${FN_BASE}/.netlify/functions/proxy`;
 const app = document.querySelector('#app');
 const storeKey = 'librarian.saved.v1';
 const libKey = 'librarian.library.v1';
-const state = { tab: 'library', libraryQuery: '', libraryFilter: 'all', librarySort: 'recent', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: readPreference('librarian.readerDark', '0') === '1', readerZoom: zoomPreference(readPreference('librarian.readerZoom', '1')), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
+const state = { tab: 'library', libraryQuery: '', libraryFilter: 'all', librarySort: 'recent', libraryView: readPreference('librarian.libraryView','grid') === 'list' ? 'list' : 'grid', query: '', loading: false, loadingMore: false, searched: false, results: [], error: '', saved: loadSaved(), filters: { source: 'all', availability: 'all', language: 'all' }, limit: PAGE_SIZE, selected: null, ask: '', reply: '', replyModel: '', asking: false, askError: '', library: loadLibrary(), reader: null, readerDark: readPreference('librarian.readerDark', '0') === '1', readerZoom: zoomPreference(readPreference('librarian.readerZoom', '1')), importing: false, libError: '', offSources: loadOffSources(), sourceStats: {} };
 function loadOffSources() { return readList('librarian.offSources', item => typeof item === 'string'); }
 let searchToken = 0;
 
@@ -972,7 +974,7 @@ function libraryTab() {
   const items = libraryItems(state.library, state.libraryQuery, state.libraryFilter, state.librarySort);
   const recent = libraryItems(state.library, '', 'reading')[0];
   const cards = items.map(p => `<article class="pdf-card">
-    <button class="pdf-open" data-read="${esc(p.id)}" aria-label="Read ${esc(p.title)}" style="--book-color:${tint(p.title)}"><span class="pdf-ico">${ICON.read}</span><span>${p.format === 'text' ? 'BOOK' : 'PDF'}</span></button>
+    <button class="pdf-open" ${p.format !== 'text' ? `data-cover-id="${esc(p.id)}"` : ''} data-read="${esc(p.id)}" aria-label="Read ${esc(p.title)}" style="--book-color:${tint(p.title)}"><span class="pdf-ico">${ICON.read}</span><span>${p.format === 'text' ? 'BOOK' : 'PDF'}</span></button>
     <div class="pdf-body">
       <strong>${esc(p.title)}</strong>
       <span class="pdf-meta">${esc([p.author, p.source, fmtSize(p.size)].filter(Boolean).join(' · '))}</span>
@@ -988,9 +990,9 @@ function libraryTab() {
     ${state.libNotice ? `<p class="notice" role="status">${esc(state.libNotice)}</p>` : ''}
     ${readyPdfDownload ? `<p class="notice" role="status"><a data-pdf-download-ready href="${esc(readyPdfDownload.url)}" download="${esc(readyPdfDownload.name)}">Download ${esc(readyPdfDownload.name)}</a>${readyPdfDownload.creditsUrl ? ` · <a href="${esc(readyPdfDownload.creditsUrl)}" download="${esc(readyPdfDownload.name)}.attribution.txt">Save attribution</a>` : ''}</p>` : ''}
     ${recent && !state.libraryQuery && state.libraryFilter === 'all' ? `<div class="continue-reading"><div><p class="eyebrow">Continue reading</p><h3>${esc(recent.title)}</h3><p>${esc(recent.author || recent.source)} · Page ${recent.page || 1} of ${recent.totalPages || '…'}</p></div><button class="btn-primary" data-read="${esc(recent.id)}">Pick up where you left off ${ICON.read}</button></div>` : ''}
-    <div class="library-tools"><div class="library-filters" role="group" aria-label="Reading status">${[['all', 'All books'], ['reading', 'Reading'], ['unread', 'Unread'], ['finished', 'Finished']].map(([value, label]) => `<button data-library-filter="${value}" aria-pressed="${state.libraryFilter === value}">${label}</button>`).join('')}</div><span class="library-count">${state.library.length} saved</span></div>
+    <div class="library-tools"><div class="library-filters" role="group" aria-label="Reading status">${[['all', 'All books'], ['reading', 'Reading'], ['unread', 'Unread'], ['finished', 'Finished']].map(([value, label]) => `<button data-library-filter="${value}" aria-pressed="${state.libraryFilter === value}">${label} <span>${libraryItems(state.library, '', value).length}</span></button>`).join('')}</div><div class="library-view" role="group" aria-label="Library view"><button data-library-view="grid" aria-pressed="${state.libraryView==='grid'}">Bookshelf</button><button data-library-view="list" aria-pressed="${state.libraryView==='list'}">List</button></div><span class="library-count">${state.library.length} saved</span></div>
     ${state.library.length ? `<div class="library-search-row"><form data-library-search><input type="search" name="query" aria-label="Search your library" placeholder="Search your library…" value="${esc(state.libraryQuery)}" /><button class="btn-ghost">Search</button></form><select data-library-sort aria-label="Sort library"><option value="recent" ${state.librarySort === 'recent' ? 'selected' : ''}>Recently opened</option><option value="title" ${state.librarySort === 'title' ? 'selected' : ''}>Title A–Z</option></select></div>` : ''}
-    ${items.length ? `<div class="pdf-grid">${cards}</div>` : state.library.length ? '<p class="notice">No books match this view. Try another filter or search.</p>' : `<div class="library-empty"><div class="empty-book">${ICON.read}</div><h3>Your reading room starts here.</h3><p>Add a PDF from Files, or discover a book to save and read in Librarian.</p><button class="btn-ghost" data-query="Jane Austen">Explore classic books</button><label class="pdf-drop" data-import-label><input type="file" accept="application/pdf,.pdf" multiple data-import /><span>Choose PDFs or drop them here</span></label></div>`}
+    ${items.length ? `<div class="pdf-grid ${state.libraryView === 'list' ? 'is-list' : 'is-bookshelf'}">${cards}</div>` : state.library.length ? '<p class="notice">No books match this view. Try another filter or search.</p>' : `<div class="library-empty"><div class="empty-book">${ICON.read}</div><h3>Your reading room starts here.</h3><p>Add a PDF from Files, or discover a book to save and read in Librarian.</p><button class="btn-ghost" data-query="Jane Austen">Explore classic books</button><label class="pdf-drop" data-import-label><input type="file" accept="application/pdf,.pdf" multiple data-import /><span>Choose PDFs or drop them here</span></label></div>`}
     </div></section>`;
 }
 
@@ -1093,7 +1095,7 @@ function activeTab() {
 
 const suiteMenu = NATIVE ? null : document.createElement('tcc-suite-menu');
 function placeSuiteMenu() { const slot = suiteMenu && document.querySelector('[data-suite-slot]'); if (slot && suiteMenu.parentNode !== slot) slot.append(suiteMenu); }
-function render() { if (state.reader?.painted && document.querySelector("#pdf-reader")) return; suiteMenu?.remove(); app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; placeSuiteMenu(); bind(); if (state.reader && !state.reader.painted) paintReader(); }
+function render() { if (state.reader?.painted && document.querySelector("#pdf-reader")) return; suiteMenu?.remove(); app.innerHTML = `${topbar()}<main>${state.shelfError ? `<div class="wrap"><p class="notice" role="alert" data-shelf-error>${esc(state.shelfError)}</p></div>` : ''}${activeTab()}</main>${modal()}${readerOverlay()}`; placeSuiteMenu(); bind(); if(state.tab==='library')paintLibraryCovers(); if (state.reader && !state.reader.painted) paintReader(); }
 function repaintResults() { const el = document.querySelector('#results'); if (el) { el.outerHTML = resultsSection(); bind(); } else render(); }
 
 function bind() {
@@ -1122,6 +1124,7 @@ function bind() {
   document.querySelector('[data-check-download]')?.addEventListener('click', () => { if (state.selected) void checkDownloadLicense(state.selected); });
   document.querySelector('[data-read-result]')?.addEventListener('click', () => { if (state.selected) void saveResultPdf(state.selected, true); });
   document.querySelector('[data-library-search]')?.addEventListener('submit', event => { event.preventDefault(); state.libraryQuery = new FormData(event.currentTarget).get('query') || ''; render(); });
+  document.querySelectorAll('[data-library-view]').forEach(el=>el.onclick=()=>{state.libraryView=el.dataset.libraryView;writePreference('librarian.libraryView',state.libraryView);render();});
   document.querySelectorAll('[data-library-filter]').forEach(el => el.onclick = () => { state.libraryFilter = el.dataset.libraryFilter; render(); });
   document.querySelector('[data-library-sort]')?.addEventListener('change', event => { state.librarySort = event.target.value; render(); });
   document.querySelectorAll('[data-finished]').forEach(el => el.onclick = async () => { const item = state.library.find(item => item.id === el.dataset.finished); if (item) { await updateBook(item.id, item.finished ? { finished: false, lastReadAt: 0, page: 1 } : { finished: true }); render(); } });

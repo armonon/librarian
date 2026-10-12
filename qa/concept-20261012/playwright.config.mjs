@@ -1,0 +1,2 @@
+import {defineConfig} from '@playwright/test';
+export default defineConfig({testDir:'../../tests/browser',timeout:45000,workers:2,use:{baseURL:'http://127.0.0.1:4211',serviceWorkers:'block',channel:'chrome'},projects:[{name:'desktop',use:{viewport:{width:1440,height:950}}},{name:'phone',use:{viewport:{width:390,height:844}}},{name:'small-phone',use:{viewport:{width:320,height:568}}}],outputDir:'./results'});
