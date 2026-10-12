@@ -90,3 +90,17 @@ test('misconfigured service-role keys never authorize guest reads',async()=>{
   assert.equal((await handler(req('read','GET',undefined,{book},false))).status,503);
  }
 });
+
+test('create inserts without a representation then reads the committed owner draft',async()=>{
+ let inserted;const calls=[];const handler=createCollectionsHandler({env,fetcher:(url,options)=>{
+  const u=new URL(url);calls.push({u,options});
+  if(u.pathname==='/auth/v1/user')return response({id:owner,email:'owner@example.test',email_confirmed_at:'2026-10-10'});
+  if(options.method==='POST'){
+   if(options.headers.Prefer!=='return=minimal')return Response.json({code:'42501'},{status:403});
+   inserted=JSON.parse(options.body);return new Response(null,{status:201});
+  }
+  assert.equal(u.searchParams.get('id'),'eq.'+inserted.id);return response([inserted]);
+ }});
+ const result=await handler(req('create','POST',{...input,visibility:'private',owner_id:'attacker',id:library}));
+ assert.equal(result.status,200);const room=await result.json();assert.equal(room.owner_id,owner);assert.equal(room.visibility,'private');assert.notEqual(room.id,library);assert.match(room.id,/^[0-9a-f-]{36}$/);assert.equal(calls.length,3);
+});
