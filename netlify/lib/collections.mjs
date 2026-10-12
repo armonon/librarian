@@ -121,7 +121,10 @@ export function createCollectionsHandler({ env = process.env, fetcher = (...args
         const lib = libraryId(), row = await getLibrary(lib);
         const books = await json(`/rest/v1/librarian_books?collection_id=eq.${lib}&select=*&order=position.asc,created_at.asc`);
         data = { ...row, books };
-      } else if (action === 'create' && request.method === 'POST') { await account(); const input = libraryInput(await boundedJson(request)); data = (await json('/rest/v1/librarian_collections', 'POST', { ...input, owner_id: user.id }))[0];
+      } else if (action === 'create' && request.method === 'POST') { await account(); const input = libraryInput(await boundedJson(request)); const createdId = crypto.randomUUID();
+        // Returning the new row in the insert hits the reader policy before its owner lookup can see it.
+        await upstream('/rest/v1/librarian_collections', { method: 'POST', headers: { 'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ ...input, id: createdId, owner_id: user.id }) });
+        data = await getLibrary(createdId);
       } else if (action === 'update' && request.method === 'PATCH') {
         const lib = libraryId(); await owner(lib); const body = await boundedJson(request); const input = libraryInput(body);
         if (typeof body.published !== 'boolean') throw new RequestError(400, 'Invalid publish state.');
